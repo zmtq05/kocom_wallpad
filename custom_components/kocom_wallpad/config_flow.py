@@ -1,27 +1,21 @@
 """Config flow for kocom_wallpad integration."""
 
-from __future__ import annotations
-import logging
-from typing import Any
+import socket
+from typing import Any, cast
 
 
 from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
-    ConfigEntry,
 )
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
-from .ew11 import Ew11Socket
-
+from .util import EntryData, get_data
 from .const import CONF_ELEVATOR, CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO, DOMAIN
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -38,8 +32,8 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         description_placeholders = {}
         if user_input is not None:
-            self._update_user_input(user_input)
-            errors, description_placeholders = self._validate_input(user_input)
+            data = self._parse_user_input(user_input)
+            errors, description_placeholders = self._validate_input(data)
 
             try:
                 await _test_connection(self.hass, user_input)
@@ -49,102 +43,82 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
 
             if not errors:
+                if entry_id := self.context.get("entry_id"):
+                    entry = self.hass.config_entries.async_get_entry(entry_id)
+                    assert entry
+                    return self.async_update_reload_and_abort(entry, data=data)
+
                 return self.async_create_entry(
-                    title=f"EW11_{len(self._async_current_entries())}",
-                    data=user_input,
+                    title=f"EW11_{data[CONF_HOST]}",
+                    data=data,
                 )
 
         return self.async_show_form(
+            step_id="user",  # reuse same translate when triggered by reconfigure
             data_schema=schema,
             errors=errors,
             description_placeholders=description_placeholders,
         )
 
-    def _update_user_input(self, user_input: dict[str, Any]):
-        # no int() for key: because when HA reloads, it will be string
+    def _parse_user_input(self, user_input: dict[str, Any]) -> EntryData:
+        data = cast(EntryData, user_input.copy())
         if light_str := user_input.get(CONF_LIGHT):
-            user_input[CONF_LIGHT] = {
+            data[CONF_LIGHT] = {
                 k: int(v) for k, v in (kv.split(":") for kv in light_str.split(","))
             }
         else:
-            user_input[CONF_LIGHT] = {}
+            data[CONF_LIGHT] = {}
 
         if thermo_str := user_input.get(CONF_THERMO):
-            user_input[CONF_THERMO] = {room: True for room in thermo_str.split(",")}
+            data[CONF_THERMO] = {room: True for room in thermo_str.split(",")}
         else:
-            _LOGGER.debug("thermo_str is empty")
-            user_input[CONF_THERMO] = {}
+            data[CONF_THERMO] = {}
+
+        return data
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle reconfiguration."""
-        schema = self._schema_with_prev_data()
-        errors = {}
-        description_placeholders = {}
-        if user_input is not None:
-            self._update_user_input(user_input)
-            errors, description_placeholders = self._validate_input(user_input)
+        return await self.async_step_user(user_input)
 
-            try:
-                await _test_connection(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                errors["base"] = "unknown"
-
-            if not errors:
-                entry = self.hass.config_entries.async_get_entry(
-                    self.context["entry_id"]
-                )
-                assert entry
-                return self.async_update_reload_and_abort(entry, data=user_input)
-
-        return self.async_show_form(
-            data_schema=schema,
-            errors=errors,
-            description_placeholders=description_placeholders,
-        )
-
-    def _validate_input(self, user_input: dict[str, Any]):
+    def _validate_input(self, parsed_user_input: EntryData):
         this_entry_id = self.context.get("entry_id")
-        errors = {}
-        description_placeholders = {}
-        for entry in self._async_current_entries():
-            if entry.entry_id != this_entry_id:
-                # other entry already configured with the same host
-                if entry.data[CONF_HOST] == user_input[CONF_HOST]:
-                    errors["base"] = "already_configured"
+        errors, description_placeholders = {}, {}
 
-                # other entry already configured with the same light room
-                this_light_rooms = set(user_input[CONF_LIGHT].keys())
-                other_light_rooms = set(x for x in entry.data[CONF_LIGHT].keys())
-                if duplicated_light := this_light_rooms.intersection(other_light_rooms):
-                    errors[CONF_LIGHT] = "light_duplicated"
-                    duplicated_room = ",".join(duplicated_light)
-                    description_placeholders["dup_room_light"] = duplicated_room
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.entry_id == this_entry_id:
+                continue
 
-                # other entry already configured with the same thermo room
-                this_thermo_rooms = set(user_input[CONF_THERMO].keys())
-                other_thermo_rooms = set(entry.data[CONF_THERMO].keys())
-                if duplicated_thermo := this_thermo_rooms.intersection(
-                    other_thermo_rooms
-                ):
-                    errors[CONF_THERMO] = "thermo_duplicated"
-                    deuplicated_room = ",".join(duplicated_thermo)
-                    description_placeholders["dup_room_thermo"] = deuplicated_room
+            data = get_data(entry)
 
-                # other entry selected fan
-                if user_input[CONF_FAN] and entry.data[CONF_FAN]:
-                    errors[CONF_FAN] = "only_one_allowed"
+            # other entry already configured with the same host
+            if data[CONF_HOST] == parsed_user_input[CONF_HOST]:
+                errors[CONF_HOST] = "duplicated_host"
 
-                # other entry selected gas
-                if user_input[CONF_GAS] and entry.data[CONF_GAS]:
-                    errors[CONF_GAS] = "only_one_allowed"
+            # other entry already configured with the same light room
+            this = set(parsed_user_input[CONF_LIGHT].keys())
+            other = set(data[CONF_LIGHT].keys())
+            if this.intersection(other):
+                errors[CONF_LIGHT] = "duplicated_room"
 
-                # other entry selected elevator
-                if user_input[CONF_ELEVATOR] and entry.data[CONF_ELEVATOR]:
-                    errors[CONF_ELEVATOR] = "only_one_allowed"
+            # other entry already configured with the same thermo room
+            this = set(parsed_user_input[CONF_THERMO].keys())
+            other = set(data[CONF_THERMO].keys())
+            if this.intersection(other):
+                errors[CONF_THERMO] = "duplicated_room"
+
+            # other entry selected fan
+            if parsed_user_input[CONF_FAN] and data[CONF_FAN]:
+                errors[CONF_FAN] = "selected_by_other_entry"
+
+            # other entry selected gas
+            if parsed_user_input[CONF_GAS] and data[CONF_GAS]:
+                errors[CONF_GAS] = "selected_by_other_entry"
+
+            # other entry selected elevator
+            if parsed_user_input[CONF_ELEVATOR] and data[CONF_ELEVATOR]:
+                errors[CONF_ELEVATOR] = "selected_by_other_entry"
         return errors, description_placeholders
 
     def _schema_with_prev_data(self) -> vol.Schema:
@@ -153,32 +127,29 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         def get_prev(key: str, default: Any):
-            if current_entry:
-                return current_entry.data.get(key, default)
-            else:
-                return default
+            return current_entry.data.get(key, default) if current_entry else default
 
-        schema_ew11 = vol.Schema(
-            {
-                vol.Required(
-                    CONF_HOST,
-                    default=get_prev(CONF_HOST, ""),
-                ): cv.string,
-                vol.Required(CONF_PORT, default=get_prev(CONF_PORT, 8899)): cv.port,
-            }
-        )
+        schema_ew11 = {
+            vol.Required(
+                CONF_HOST,
+                default=get_prev(CONF_HOST, ""),
+            ): cv.string,
+            vol.Required(CONF_PORT, default=get_prev(CONF_PORT, 8899)): cv.port,
+        }
 
-        light_str = ""
-        if light := get_prev(CONF_LIGHT, ""):
-            light_str = ",".join(f"{k}:{v}" for k, v in light.items() if v != 0)
+        conf_light_default = ""
+        light: dict[str, int] = get_prev(CONF_LIGHT, {})
+        if light:
+            conf_light_default = ",".join(f"{k}:{v}" for k, v in light.items())
 
-        thermo_str = ""
-        if thermo := get_prev(CONF_THERMO, {}):
-            thermo_str = ",".join(k for k in thermo.keys())
+        conf_thermo_default = ""
+        thermo: dict[str, bool] = get_prev(CONF_THERMO, {})
+        if thermo:
+            conf_thermo_default = ",".join(k for k in thermo)
 
         schema_device = {
-            vol.Optional(CONF_LIGHT, default=light_str): cv.string,  # type: ignore
-            vol.Optional(CONF_THERMO, default=thermo_str): cv.string,  # type: ignore
+            vol.Optional(CONF_LIGHT, default=conf_light_default): cv.string,  # type: ignore
+            vol.Optional(CONF_THERMO, default=conf_thermo_default): cv.string,  # type: ignore
             vol.Optional(CONF_FAN, default=get_prev(CONF_FAN, False)): cv.boolean,
             vol.Optional(CONF_GAS, default=get_prev(CONF_GAS, False)): cv.boolean,
             vol.Optional(
@@ -186,16 +157,14 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             ): cv.boolean,
         }
 
-        return schema_ew11.extend(schema_device)
+        return vol.Schema(schema_ew11).extend(schema_device)
 
 
-async def _test_connection(hass: HomeAssistant, input: dict[str, Any]):
-    """Validate the user input allows us to connect."""
-
+async def _test_connection(hass: HomeAssistant, input: dict[str, Any]) -> None:
     def test_connection(host, port):
         try:
-            sock = Ew11Socket(host, port)
-        except OSError as err:
+            sock = socket.create_connection(address=(host, port), timeout=5)
+        except TimeoutError as err:
             raise CannotConnect from err
         else:
             sock.close()

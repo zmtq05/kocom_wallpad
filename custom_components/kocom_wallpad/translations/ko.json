@@ -2,6 +2,8 @@
     "config": {
         "step": {
             "user": {
+                "title": "EW11 설정",
+                "description": "HA와 연결하기 위한 설정을 진행합니다.",
                 "data": {
                     "host": "EW11 IP 주소",
                     "port": "EW11 포트",
@@ -14,35 +16,22 @@
                 "data_description": {
                     "host": "e.g. 192.168.0.xxx",
                     "light": "방의 index:방의 조명 개수; 쉼표로 구분 e.g. 0:3,1:2",
-                    "thermostat": "난방을 조절할 방의 index; 쉼표로 구분, e.g. 0,1"
-                }
-            },
-            "reconfigure": {
-                "data": {
-                    "host": "EW11 IP 주소",
-                    "port": "EW11 포트",
-                    "light": "조명",
-                    "thermostat": "난방",
-                    "fan": "환기",
-                    "gas": "가스",
-                    "elevator": "엘리베이터"
-                },
-                "data_description": {
-                    "host": "e.g. 192.168.0.xxx",
-                    "light": "방의 index:방의 조명 개수; 쉼표로 구분 e.g. 0:3,1:2",
-                    "thermostat": "난방을 조절할 방의 index; 쉼표로 구분, e.g. 0,1"
+                    "thermostat": "난방을 조절할 방의 index; 쉼표로 구분, e.g. 0,1",
+                    "fan": "하나의 EW11에만 설정 가능",
+                    "gas": "하나의 EW11에만 설정 가능",
+                    "elevator": "하나의 EW11에만 설정 가능"
                 }
             }
         },
         "abort": {
-            "already_configured": "똑같은 HOST가 있습니다."
+            "already_configured": "똑같은 HOST가 있습니다.",
+            "reauth_successful": "재설정이 완료되었습니다."
         },
         "error": {
             "cannot_connect": "연결할 수 없습니다.",
-            "already_configured": "똑같은 HOST가 있습니다.",
-            "light_duplicated": "중복된 방이 있습니다. {dup_room_light}",
-            "thermo_duplicated": "중복된 방이 있습니다. {dup_room_thermo}",
-            "only_one_allowed": "하나의 EW11에만 연결할 수 있습니다."
+            "duplicated_host": "같은 주소로 연결된 EW11이 있습니다.",
+            "duplicated_room": "다른 EW11에 등록된 방이 있습니다.",
+            "selected_by_other_entry": "다른 EW11이 관리하고 있습니다."
         }
     }
 }
