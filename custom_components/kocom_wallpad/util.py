@@ -10,6 +10,7 @@ class EntryData(TypedDict):
     fan: bool
     gas: bool
     elevator: bool
+    room_name: dict[str, str]
 
 
 def get_data(entry: ConfigEntry) -> EntryData:
