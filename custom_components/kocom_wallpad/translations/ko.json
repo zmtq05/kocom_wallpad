@@ -3,23 +3,23 @@
         "step": {
             "user": {
                 "title": "EW11 설정",
-                "description": "HA와 연결하기 위한 설정을 진행합니다.",
+                "description": "EW11의 연결 정보와 EW11에서 관리할 기기 정보를 입력해주세요.",
                 "data": {
-                    "host": "EW11 IP 주소",
-                    "port": "EW11 포트",
+                    "host": "IP 주소",
+                    "port": "포트",
                     "light": "조명",
                     "thermostat": "난방",
                     "fan": "환기",
                     "gas": "가스",
-                    "elevator": "엘리베이터"
+                    "elevator": "엘리베이터",
+                    "room_name": "방 이름"
                 },
                 "data_description": {
-                    "host": "e.g. 192.168.0.xxx",
-                    "light": "방의 index:방의 조명 개수; 쉼표로 구분 e.g. 0:3,1:2",
-                    "thermostat": "난방을 조절할 방의 index; 쉼표로 구분, e.g. 0,1",
-                    "fan": "하나의 EW11에만 설정 가능",
-                    "gas": "하나의 EW11에만 설정 가능",
-                    "elevator": "하나의 EW11에만 설정 가능"
+                    "host": "EW11의 IP 주소입니다.",
+                    "port": "EW11의 포트입니다.",
+                    "light": "이 EW11에서 관리할 조명입니다.\n[방 INDEX:방 조명 수] 형식으로 작성하며 쉼표로 구분합니다.\nex) 0:3,1:2",
+                    "thermostat": "이 EW11에서 관리할 난방입니다.\n[방 INDEX] 형식으로 작성하며 쉼표로 구분합니다.\nex) 0,1,2,3",
+                    "room_name": "각 방의 이름을 설정합니다.\n[방 INDEX:방 이름] 형식으로 작성하며 쉼표로 구분합니다.\n기본값) 0:거실,1:안방,2:방1,3:방2"
                 }
             }
         },

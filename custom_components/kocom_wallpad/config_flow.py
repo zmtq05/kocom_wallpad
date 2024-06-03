@@ -15,7 +15,15 @@ import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
 from .util import EntryData, get_data
-from .const import CONF_ELEVATOR, CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO, DOMAIN
+from .const import (
+    CONF_ELEVATOR,
+    CONF_FAN,
+    CONF_GAS,
+    CONF_LIGHT,
+    CONF_ROOM_NAME,
+    CONF_THERMO,
+    DOMAIN,
+)
 
 
 class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -73,6 +81,18 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             data[CONF_THERMO] = {room: True for room in thermo_str.split(",")}
         else:
             data[CONF_THERMO] = {}
+
+        if room_name := user_input.get(CONF_ROOM_NAME):
+            data[CONF_ROOM_NAME] = dict(
+                pair.split(":") for pair in room_name.split(",")
+            )
+        else:
+            data[CONF_ROOM_NAME] = {
+                "0": "거실",
+                "1": "안방",
+                "2": "방1",
+                "3": "방2",
+            }
 
         return data
 
@@ -155,6 +175,9 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             vol.Optional(
                 CONF_ELEVATOR, default=get_prev(CONF_ELEVATOR, False)
             ): cv.boolean,
+            vol.Optional(
+                CONF_ROOM_NAME, default=get_prev(CONF_ROOM_NAME, "")
+            ): cv.string,
         }
 
         return vol.Schema(schema_ew11).extend(schema_device)
