@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 
+from .kocom_packet import KocomPacket, Light, Get, Seq, Set, Value
 from .const import CONF_LIGHT
 from .util import get_data
 
@@ -74,90 +75,54 @@ class Ew11:
             if not data:
                 break
 
-            # handle packet
-            _LOGGER.debug("<-(%s) %s", self._host, data.hex(" ").upper())
-
-            if len(data) != 21:
-                # invalid length; truncated?
+            try:
+                packet = KocomPacket(data)
+                # _LOGGER.debug("<-(%s) %s", self._host, packet)
+                _LOGGER.info("%s %s-> %s %s: %s", packet.src, packet.type, packet.dst, packet.cmd, packet.value)
+            except ValueError as err:
+                _LOGGER.warning("Invalid packet: %s", err)
                 continue
 
-            header = data[0:2]
-            type_ = data[2:4]
-            # pad = data[4]
-            dst = data[5:7]
-            src = data[7:9]
-            cmd = data[9]
-            val = data[10:18]
-            # chksum = data[18]
-            footer = data[19:21]
-
-            if header != b"\xaa\x55":
-                # invalid header
-                _LOGGER.warning("Invalid header")
+            if packet.type != Seq():
                 continue
 
-            if footer != b"\x0d\x0d":
-                # invalid footer
-                _LOGGER.warning("Invalid footer")
+            if packet.cmd != Set():
                 continue
 
-            if dst != b"\x01\x00":
-                # ignore broadcast
-                _LOGGER.debug("Ignoring broadcast message")
-                continue
-
-            if src == b"\x01\x00":
-                # ignore self
-                _LOGGER.debug("Ignoring self message")
-                continue
-
-            match (type_[0], type_[1]):
-                case (0x30, 0xBC | 0xBD | 0xBE):
-                    match cmd:
-                        case 0x00:
-                            match (src[0], src[1]):
-                                case (0x0E, room):
-                                    self.lights[room]["state"] = list(val)
-                                    for cb in self.lights[room]["callback"]:
-                                        cb()
-                                case _:
-                                    pass  # TODO handle other sources
-                        case _:
-                            pass
-                case (0x30, 0xDC | 0xDD | 0xDE):
-                    _LOGGER.debug("Received ACK")
+            src = packet.src
+            match (src[0], src[1]):
+                case (0x0E, room):
+                    self.lights[room]["state"] = list(packet.value)
+                    for cb in self.lights[room]["callback"]:
+                        cb()
                 case _:
-                    # invalid type
-                    _LOGGER.warning("Invalid type: %s", type_.hex(" ").upper())
-                    continue
+                    _LOGGER.warning("Unhandle packet: %s", packet)
+
+
 
     async def turn_on_light(self, room: int, light: int) -> None:
         """Turn on the light."""
-        value = self.lights[room]["state"]
-        value[light] = 0xFF
-        body = bytearray([0x30, 0xBC, 0x00, 0x0E, room, 0x01, 0x00, 0x00] + value)
-        body += (sum(body) % 256).to_bytes()
+        state = self.lights[room]["state"]
+        state[light] = 0xFF
+        packet = KocomPacket.create(Light(room), Set(), Value.from_state(state))
         assert self._writer
-        self._writer.write(b"\xAA\x55" + body + b"\x0D\x0D")
+        self._writer.write(packet)
         await self._writer.drain()
 
     async def turn_off_light(self, room: int, light: int) -> None:
         """Turn off the light."""
-        value = self.lights[room]["state"]
-        value[light] = 0x00
-        body = bytearray([0x30, 0xBC, 0x00, 0x0E, room, 0x01, 0x00, 0x00] + value)
-        body += (sum(body) % 256).to_bytes()
+        state = self.lights[room]["state"]
+        state[light] = 0x00
+        packet = KocomPacket.create(Light(room), Set(), Value.from_state(state))
         assert self._writer
-        self._writer.write(b"\xAA\x55" + body + b"\x0D\x0D")
+        self._writer.write(packet)
         await self._writer.drain()
 
     async def init_light(self) -> None:
         """Initialize the light."""
         for room in self.lights:
-            body = bytearray(
-                [0x30, 0xBC, 0x00, 0x0E, room, 0x01, 0x00, 0x3A] + [0x00] * 8
-            )
-            body += (sum(body) % 256).to_bytes()
+            state: list[int] = self.lights[room]["state"]
+            packet = KocomPacket.create(Light(room), Get(), Value.from_state(state))
             assert self._writer
-            self._writer.write(b"\xAA\x55" + body + b"\x0D\x0D")
+            self._writer.write(packet)
             await self._writer.drain()
