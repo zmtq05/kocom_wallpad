@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import socket
 from collections.abc import Callable
 from typing import Any, Literal
 
@@ -17,18 +16,6 @@ from .const import CONF_LIGHT
 from .util import get_data
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class Ew11Socket:
-    """Ew11 Socket."""
-
-    def __init__(self, host: str, port: int) -> None:
-        """Ew11 Socket."""
-        self._sock = socket.create_connection(address=(host, port), timeout=5)
-
-    def close(self) -> None:
-        """Close the socket."""
-        self._sock.close()
 
 
 class Ew11:
@@ -78,7 +65,14 @@ class Ew11:
             try:
                 packet = KocomPacket(data)
                 # _LOGGER.debug("<-(%s) %s", self._host, packet)
-                _LOGGER.info("%s %s-> %s %s: %s", packet.src, packet.type, packet.dst, packet.cmd, packet.value)
+                _LOGGER.info(
+                    "%s %s-> %s %s: %s",
+                    packet.src,
+                    packet.type,
+                    packet.dst,
+                    packet.cmd,
+                    packet.value,
+                )
             except ValueError as err:
                 _LOGGER.warning("Invalid packet: %s", err)
                 continue
@@ -97,8 +91,6 @@ class Ew11:
                         cb()
                 case _:
                     _LOGGER.warning("Unhandle packet: %s", packet)
-
-
 
     async def turn_on_light(self, room: int, light: int) -> None:
         """Turn on the light."""
