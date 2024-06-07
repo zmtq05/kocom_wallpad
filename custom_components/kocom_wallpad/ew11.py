@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Any, Literal
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
-from .kocom_packet import KocomPacket, Light, Get, Seq, Set, Value
 from .const import CONF_LIGHT
+from .kocom_packet import Get, KocomPacket, Light, Seq, Set, Value
 from .util import get_data
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,15 +22,17 @@ class Ew11:
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Ew11 Wrapper."""
-        self._hass = hass
-        self._entry = entry
         data = get_data(entry)
+        self._hass = hass
         self._host = data[CONF_HOST]
         self._port = data[CONF_PORT]
         self._reader, self._writer = None, None
-        self.lights: dict[int, dict[Literal["state", "callback"], Any]] = {
-            int(room): {"state": [0x00] * 8, "callback": set()}
-            for room in data[CONF_LIGHT]
+        self._send_queue = asyncio.Queue(1)
+        self._lock = asyncio.Lock()
+
+        self.light_controllers = {
+            int(room): LightController(self, int(room), light_size)
+            for room, light_size in data[CONF_LIGHT].items()
         }
 
     async def async_connect(self) -> None:
@@ -47,74 +48,87 @@ class Ew11:
             await self._writer.wait_closed()
             self._reader, self._writer = None, None
 
-    def register_callback(self, room: int, callback: Callable[[], None]) -> None:
-        """Register callback."""
-        self.lights[room]["callback"].add(callback)
-
-    def unregister_callback(self, room: int, callback: Callable[[], None]) -> None:
-        """Unregister callback."""
-        self.lights[room]["callback"].discard(callback)
-
     async def listen(self) -> None:
         """Listen for incoming messages."""
         while self._reader is not None:
             data = await self._reader.read(21)
+
             if not data:
                 break
 
             try:
                 packet = KocomPacket(data)
-                # _LOGGER.debug("<-(%s) %s", self._host, packet)
-                _LOGGER.info(
-                    "%s %s-> %s %s: %s",
-                    packet.src,
-                    packet.type,
-                    packet.dst,
-                    packet.cmd,
-                    packet.value,
-                )
-            except ValueError as err:
-                _LOGGER.warning("Invalid packet: %s", err)
+                _LOGGER.debug("<-(%s) %s", self._host, packet)
+            except AssertionError:
+                _LOGGER.warning("Invalid packet: %s", data.hex(" ").upper())
                 continue
 
-            if packet.type != Seq():
-                continue
-
-            if packet.cmd != Set():
-                continue
-
-            src = packet.src
-            match (src[0], src[1]):
-                case (0x0E, room):
-                    self.lights[room]["state"] = list(packet.value)
-                    for cb in self.lights[room]["callback"]:
-                        cb()
+            match packet.src:
+                case Light(room) if packet.type == Seq():
+                    await self.light_controllers[room].update(packet.value)
                 case _:
-                    _LOGGER.warning("Unhandle packet: %s", packet)
+                    pass
 
-    async def turn_on_light(self, room: int, light: int) -> None:
-        """Turn on the light."""
-        state = self.lights[room]["state"]
-        state[light] = 0xFF
-        packet = KocomPacket.create(Light(room), Set(), Value.from_state(state))
-        assert self._writer
-        self._writer.write(packet)
-        await self._writer.drain()
-
-    async def turn_off_light(self, room: int, light: int) -> None:
-        """Turn off the light."""
-        state = self.lights[room]["state"]
-        state[light] = 0x00
-        packet = KocomPacket.create(Light(room), Set(), Value.from_state(state))
-        assert self._writer
-        self._writer.write(packet)
-        await self._writer.drain()
-
-    async def init_light(self) -> None:
-        """Initialize the light."""
-        for room in self.lights:
-            state: list[int] = self.lights[room]["state"]
-            packet = KocomPacket.create(Light(room), Get(), Value.from_state(state))
-            assert self._writer
+    async def send_loop(self) -> None:
+        """Send packets."""
+        while self._writer is not None:
+            packet = await self._send_queue.get()
+            _LOGGER.debug("->(%s) %s", self._host, packet)
             self._writer.write(packet)
             await self._writer.drain()
+            await asyncio.sleep(1)  # prevent packet collision
+            self._send_queue.task_done()
+
+    async def send(self, packet: KocomPacket) -> None:
+        """Send a packet."""
+        await self._send_queue.put(packet)
+
+
+class LightController:
+    """Control the lighting in a room."""
+
+    def __init__(self, ew11: Ew11, room: int, light_size: int) -> None:
+        self._ew11: Ew11 = ew11
+        self._room: int = room
+        self._size: int = light_size
+        self._state: list[bool] = [False] * 8
+        self._callbacks: set[Callable[[], None]] = set()
+
+    async def turn_on(self, light: int) -> None:
+        """Turn on the light."""
+        self._state[light] = True
+        await self._ew11.send(
+            KocomPacket.create(Light(self._room), Set(), Value.from_state(self._state))
+        )
+
+    async def turn_off(self, light: int) -> None:
+        """Turn off the light."""
+        self._state[light] = False
+        await self._ew11.send(
+            KocomPacket.create(Light(self._room), Set(), Value.from_state(self._state))
+        )
+
+    def is_on(self, light: int) -> bool:
+        """Return true if the light is on."""
+        return self._state[light]
+
+    def register_callback(self, callback: Callable[[], None]) -> None:
+        """Register callback."""
+        self._callbacks.add(callback)
+
+    def remove_callback(self, callback: Callable[[], None]) -> None:
+        """Unregister callback."""
+        self._callbacks.discard(callback)
+
+    async def init(self) -> None:
+        """Initialize the lights."""
+        await self._ew11.send(
+            KocomPacket.create(Light(self._room), Get(), Value.from_state(self._state))
+        )
+
+    @callback
+    async def update(self, state: Value) -> None:
+        self._state = [x == 0xFF for x in state]
+        _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
+        for async_write_ha_state in self._callbacks:
+            async_write_ha_state()

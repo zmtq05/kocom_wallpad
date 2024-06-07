@@ -8,23 +8,23 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from custom_components.kocom_wallpad.ew11 import Ew11
+from .ew11 import Ew11, LightController
 from .util import get_data
-
-from .const import CONF_LIGHT, CONF_ROOM_NAME, DOMAIN
+from .const import CONF_LIGHT, DOMAIN
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
     ew11: Ew11 = hass.data[DOMAIN][entry.entry_id]
-    entry.async_create_task(hass, ew11.init_light())
     data = get_data(entry)
     for room, light_size in data[CONF_LIGHT].items():
-        for light in range(light_size):
-            async_add_entities(
-                [KocomLight(int(room), light, ew11, data[CONF_ROOM_NAME][room])]
-            )
+        room = int(room)
+        controller = ew11.light_controllers[room]
+        entry.async_create_task(hass, controller.init())
+        async_add_entities(
+            [KocomLight(room, light, controller) for light in range(light_size)]
+        )
 
 
 class KocomLight(LightEntity):
@@ -33,36 +33,32 @@ class KocomLight(LightEntity):
     _attr_color_mode = ColorMode.ONOFF
     _attr_supported_color_modes = {ColorMode.ONOFF}
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(
         self,
         room: int,
         light: int,
-        ew11: Ew11,
-        room_name: str | None = None,
+        controller: LightController,
     ):
         self.room = room
         self.light = light
-        self._ew11 = ew11
-        if room_name:
-            self._attr_name = f"{room_name} 조명{light+1}"
-        else:
-            self._attr_name = f"방{room} 조명{light+1}"
+        self.controller = controller
+        self._attr_name = f"방{room} 조명{light+1}"
         self._attr_unique_id = f"room_{room}_light_{light+1}"
 
     @property
     def is_on(self) -> bool:
-        # return self._is_on
-        return self._ew11.lights[self.room]["state"][self.light] == 0xFF
+        return self.controller.is_on(self.light)
 
     async def async_turn_on(self) -> None:
-        await self._ew11.turn_on_light(self.room, self.light)
+        await self.controller.turn_on(self.light)
 
     async def async_turn_off(self) -> None:
-        await self._ew11.turn_off_light(self.room, self.light)
+        await self.controller.turn_off(self.light)
 
     async def async_added_to_hass(self) -> None:
-        self._ew11.register_callback(self.room, self.async_write_ha_state)
+        self.controller.register_callback(self.async_write_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:
-        self._ew11.unregister_callback(self.room, self.async_write_ha_state)
+        self.controller.remove_callback(self.async_write_ha_state)
