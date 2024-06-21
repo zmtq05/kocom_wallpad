@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant, callback
 
 from .const import CONF_LIGHT
 from .kocom_packet import Get, KocomPacket, Light, Seq, Set, Value
-from .util import get_data
+from .util import typed_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,33 +22,34 @@ class Ew11:
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Ew11 Wrapper."""
-        data = get_data(entry)
+        data = typed_data(entry)
         self._hass = hass
         self._host = data[CONF_HOST]
         self._port = data[CONF_PORT]
         self._reader, self._writer = None, None
-        self._send_queue = asyncio.Queue(1)
-        self._lock = asyncio.Lock()
+        self._send_queue = asyncio.Queue()
 
         self.light_controllers = {
             int(room): LightController(self, int(room), light_size)
             for room, light_size in data[CONF_LIGHT].items()
         }
 
-    async def async_connect(self) -> None:
+    async def connect(self) -> None:
         """Connect to the device."""
         self._reader, self._writer = await asyncio.open_connection(
             host=self._host, port=self._port
         )
+        _LOGGER.info("Connected to %s", self._host)
 
-    async def async_disconnect(self) -> None:
+    async def disconnect(self) -> None:
         """Disconnect from the device."""
         if self._writer:
             self._writer.close()
             await self._writer.wait_closed()
             self._reader, self._writer = None, None
+            _LOGGER.info("Disconneted from %s", self._host)
 
-    async def listen(self) -> None:
+    async def read_loop(self) -> None:
         """Listen for incoming messages."""
         while self._reader is not None:
             data = await self._reader.read(21)

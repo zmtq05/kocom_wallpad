@@ -13,5 +13,5 @@ class EntryData(TypedDict):
     room_name: dict[str, str]
 
 
-def get_data(entry: ConfigEntry) -> EntryData:
+def typed_data(entry: ConfigEntry) -> EntryData:
     return cast(EntryData, entry.data)
