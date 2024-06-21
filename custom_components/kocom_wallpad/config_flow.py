@@ -14,7 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 
-from .util import EntryData, get_data
+from .util import EntryData, typed_data
 from .const import (
     CONF_ELEVATOR,
     CONF_FAN,
@@ -110,7 +110,7 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             if entry.entry_id == this_entry_id:
                 continue
 
-            data = get_data(entry)
+            data = typed_data(entry)
 
             # other entry already configured with the same host
             if data[CONF_HOST] == parsed_user_input[CONF_HOST]:
