@@ -81,6 +81,10 @@ class Value(_PacketPart):
     def from_state(cls, state: list[bool]) -> Self:
         return cls(bytes([0xFF if x else 0x00 for x in state]))
 
+    @classmethod
+    def empty(cls) -> Self:
+        return cls(bytes([0] * 8))
+
     def __str__(self) -> str:
         return self.hex(" ").upper()
 

@@ -11,7 +11,14 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 
 from .const import CONF_LIGHT
-from .kocom_packet import Get, KocomPacket, Light, Seq, Set, Value
+from .kocom_packet import (
+    Get,
+    KocomPacket,
+    Light,
+    Seq,
+    Set,
+    Value,
+)
 from .util import typed_data
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,6 +30,7 @@ class Ew11:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Ew11 Wrapper."""
         data = typed_data(entry)
+        self._entry = entry
         self._hass = hass
         self._host = data[CONF_HOST]
         self._port = data[CONF_PORT]
@@ -64,8 +72,11 @@ class Ew11:
                 _LOGGER.warning("Invalid packet: %s", data.hex(" ").upper())
                 continue
 
+            if packet.type != Seq():
+                continue
+
             match packet.src:
-                case Light(room) if packet.type == Seq():
+                case Light(room):
                     await self.light_controllers[room].update(packet.value)
                 case _:
                     pass
@@ -90,28 +101,42 @@ class LightController:
 
     def __init__(self, ew11: Ew11, room: int, light_size: int) -> None:
         self._ew11: Ew11 = ew11
+        self._hass = ew11._hass
+        self._entry = ew11._entry
         self._room: int = room
         self._size: int = light_size
-        self._state: list[bool] = [False] * 8
+        self._state: list[int] = [0] * 8
         self._callbacks: set[Callable[[], None]] = set()
+        self._task = None
+
+    async def _spawn_task_if_not_exists(self) -> None:
+        # 일괄 점등, 소등용 batch
+        # 하나의 조명마다 패킷을 보내는 대신
+        # 일정시간 기다렸다가 하나로 모아서 보냄
+        async def task(ew11: Ew11):
+            await asyncio.sleep(0.2)
+            await ew11.send(
+                KocomPacket.create(Light(self._room), Set(), Value(self._state))
+            )
+
+        if not self._task:
+            self._task = self._entry.async_create_task(
+                self._hass, task(self._ew11), "order"
+            )
 
     async def turn_on(self, light: int) -> None:
         """Turn on the light."""
-        self._state[light] = True
-        await self._ew11.send(
-            KocomPacket.create(Light(self._room), Set(), Value.from_state(self._state))
-        )
+        self._state[light] = 0xFF
+        await self._spawn_task_if_not_exists()
 
     async def turn_off(self, light: int) -> None:
         """Turn off the light."""
-        self._state[light] = False
-        await self._ew11.send(
-            KocomPacket.create(Light(self._room), Set(), Value.from_state(self._state))
-        )
+        self._state[light] = 0
+        await self._spawn_task_if_not_exists()
 
     def is_on(self, light: int) -> bool:
         """Return true if the light is on."""
-        return self._state[light]
+        return self._state[light] == 0xFF
 
     def register_callback(self, callback: Callable[[], None]) -> None:
         """Register callback."""
@@ -124,12 +149,13 @@ class LightController:
     async def init(self) -> None:
         """Initialize the lights."""
         await self._ew11.send(
-            KocomPacket.create(Light(self._room), Get(), Value.from_state(self._state))
+            KocomPacket.create(Light(self._room), Get(), Value.empty())
         )
 
     @callback
     async def update(self, state: Value) -> None:
-        self._state = [x == 0xFF for x in state]
+        self._state = list(state)
         _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
         for async_write_ha_state in self._callbacks:
             async_write_ha_state()
+        self._task = None
