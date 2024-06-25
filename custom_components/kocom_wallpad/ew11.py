@@ -8,17 +8,10 @@ from collections.abc import Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 
 from .const import CONF_LIGHT
-from .kocom_packet import (
-    Get,
-    KocomPacket,
-    Light,
-    Seq,
-    Set,
-    Value,
-)
+from .kocom_packet import KocomPacket, PacketType, Device, Command
 from .util import typed_data
 
 _LOGGER = logging.getLogger(__name__)
@@ -72,12 +65,12 @@ class Ew11:
                 _LOGGER.warning("Invalid packet: %s", data.hex(" ").upper())
                 continue
 
-            if packet.type != Seq():
+            if packet.type != PacketType.Seq:
                 continue
 
             match packet.src:
-                case Light(room):
-                    await self.light_controllers[room].update(packet.value)
+                case (Device.Light, room):
+                    self.light_controllers[room].update(packet.value)
                 case _:
                     pass
 
@@ -96,32 +89,51 @@ class Ew11:
         await self._send_queue.put(packet)
 
 
-class LightController:
+class _Component:
+    def __init__(self, ew11: Ew11) -> None:
+        self._ew11: Ew11 = ew11
+        self._callbacks: set[Callable[[], None]] = set()
+
+    def register_callback(self, callback: Callable[[], None]) -> None:
+        """Register callback."""
+        self._callbacks.add(callback)
+
+    def remove_callback(self, callback: Callable[[], None]) -> None:
+        """Unregister callback."""
+        self._callbacks.discard(callback)
+
+    def update(self):
+        for async_write_ha_state in self._callbacks:
+            async_write_ha_state()
+
+
+class LightController(_Component):
     """Control the lighting in a room."""
 
     def __init__(self, ew11: Ew11, room: int, light_size: int) -> None:
-        self._ew11: Ew11 = ew11
-        self._hass = ew11._hass
-        self._entry = ew11._entry
+        super().__init__(ew11)
         self._room: int = room
         self._size: int = light_size
         self._state: list[int] = [0] * 8
-        self._callbacks: set[Callable[[], None]] = set()
         self._task = None
 
     async def _spawn_task_if_not_exists(self) -> None:
         # 일괄 점등, 소등용 batch
         # 하나의 조명마다 패킷을 보내는 대신
         # 일정시간 기다렸다가 하나로 모아서 보냄
-        async def task(ew11: Ew11):
+        async def task():
             await asyncio.sleep(0.2)
-            await ew11.send(
-                KocomPacket.create(Light(self._room), Set(), Value(self._state))
+            await self._ew11.send(
+                KocomPacket.create(
+                    (Device.Light, self._room),
+                    Command.Set,
+                    self._state,
+                )
             )
 
         if not self._task:
-            self._task = self._entry.async_create_task(
-                self._hass, task(self._ew11), "order"
+            self._task = self._ew11._entry.async_create_task(
+                self._ew11._hass, task(), "order"
             )
 
     async def turn_on(self, light: int) -> None:
@@ -138,24 +150,14 @@ class LightController:
         """Return true if the light is on."""
         return self._state[light] == 0xFF
 
-    def register_callback(self, callback: Callable[[], None]) -> None:
-        """Register callback."""
-        self._callbacks.add(callback)
-
-    def remove_callback(self, callback: Callable[[], None]) -> None:
-        """Unregister callback."""
-        self._callbacks.discard(callback)
-
     async def init(self) -> None:
         """Initialize the lights."""
         await self._ew11.send(
-            KocomPacket.create(Light(self._room), Get(), Value.empty())
+            KocomPacket.create((Device.Light, self._room), Command.Get)
         )
 
-    @callback
-    async def update(self, state: Value) -> None:
-        self._state = list(state)
+    def update(self, state: list[int]) -> None:
+        self._state = state
         _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
-        for async_write_ha_state in self._callbacks:
-            async_write_ha_state()
+        super().update()
         self._task = None
