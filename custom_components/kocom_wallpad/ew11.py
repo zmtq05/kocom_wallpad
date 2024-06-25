@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_LIGHT
+from .const import CONF_LIGHT, CONF_THERMO
 from .kocom_packet import KocomPacket, PacketType, Device, Command
 from .util import typed_data
 
@@ -33,6 +33,10 @@ class Ew11:
         self.light_controllers = {
             int(room): LightController(self, int(room), light_size)
             for room, light_size in data[CONF_LIGHT].items()
+        }
+
+        self.thermostats = {
+            int(room): Thermostat(self, int(room)) for room in data[CONF_THERMO]
         }
 
     async def connect(self) -> None:
@@ -71,6 +75,8 @@ class Ew11:
             match packet.src:
                 case (Device.Light, room):
                     self.light_controllers[room].update(packet.value)
+                case (Device.Thermostat, room):
+                    self.thermostats[room].update(packet.value)
                 case _:
                     pass
 
@@ -161,3 +167,75 @@ class LightController(_Component):
         _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
         super().update()
         self._task = None
+
+
+class Thermostat(_Component):
+    def __init__(self, ew11: Ew11, room: int) -> None:
+        super().__init__(ew11)
+        self.room = room
+        self._state = [0, 0, 0, 0, 0, 0, 0, 0]
+
+    async def refresh(self) -> None:
+        await self._ew11.send(
+            KocomPacket.create(
+                dst=(Device.Thermostat, self.room),
+                cmd=Command.Get,
+            )
+        )
+
+    @property
+    def is_on(self) -> bool:
+        return self._state[0] == 0x11
+
+    @property
+    def is_away(self) -> bool:
+        return self._state[1] == 0x01
+
+    @property
+    def target_temp(self) -> int:
+        return self._state[2]
+
+    @property
+    def current_temp(self) -> int:
+        return self._state[4]
+
+    async def set_temp(self, target_temp: int):
+        self._state[2] = target_temp
+        await self._send()
+
+    async def on(self):
+        self._state[0] = 0x11
+        self._state[1] = 0x00
+        await self._send()
+
+    async def off(self):
+        self._state[0] = 0x01
+        self._state[1] = 0x00
+        await self._send()
+
+    async def away(self) -> None:
+        self._state[0] = 0x11  # on
+        self._state[1] = 0x01  # away
+        await self._send()
+
+    async def _send(self):
+        await self._ew11.send(
+            KocomPacket.create(
+                (Device.Thermostat, self.room),
+                Command.Set,
+                self._state,
+            )
+        )
+
+    def update(self, state: list[int]) -> None:
+        self._state = list(state)
+
+        _LOGGER.info(
+            "Thermostat { room: %s, on: %s, away: %s, target: %s, current: %s }",
+            self.room,
+            self.is_on,
+            self.is_away,
+            self.target_temp,
+            self.current_temp,
+        )
+        super().update()
