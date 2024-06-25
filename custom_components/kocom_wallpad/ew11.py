@@ -39,6 +39,11 @@ class Ew11:
             int(room): Thermostat(self, int(room)) for room in data[CONF_THERMO]
         }
 
+        if data["fan"]:
+            self.fan = Fan(self)
+        else:
+            self.fan = None
+
     async def connect(self) -> None:
         """Connect to the device."""
         self._reader, self._writer = await asyncio.open_connection(
@@ -77,6 +82,9 @@ class Ew11:
                     self.light_controllers[room].update(packet.value)
                 case (Device.Thermostat, room):
                     self.thermostats[room].update(packet.value)
+                case (Device.Fan, _):
+                    if self.fan:
+                        self.fan.update(packet.value)
                 case _:
                     pass
 
@@ -238,4 +246,36 @@ class Thermostat(_Component):
             self.target_temp,
             self.current_temp,
         )
+        super().update()
+
+
+class Fan(_Component):
+    def __init__(self, ew11: Ew11) -> None:
+        super().__init__(ew11)
+        self._state = [0, 0x01, 0, 0, 0, 0, 0, 0]
+
+    async def _send(self) -> None:
+        await self._ew11.send(KocomPacket.create(Device.Fan, Command.Set, self._state))
+
+    async def refresh(self) -> None:
+        await self._ew11.send(KocomPacket.create(Device.Fan, Command.Get))
+
+    @property
+    def is_on(self) -> bool:
+        return self._state[0] == 0x11
+
+    @property
+    def step(self) -> int:
+        return self._state[2] // 0x40
+
+    async def set_step(self, step: int):
+        if step == 0:
+            self._state[0] = 0x00
+        else:
+            self._state[0] = 0x11
+            self._state[2] = step * 0x40
+        await self._send()
+
+    def update(self, state: list[int]):
+        self._state = state
         super().update()
