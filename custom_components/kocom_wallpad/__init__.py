@@ -14,7 +14,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     entry.async_create_background_task(hass, ew11.send_loop(), "send_loop")
 
     await hass.config_entries.async_forward_entry_setups(
-        entry, ["light", "climate", "fan"]
+        entry, ["light", "climate", "fan", "valve"]
     )
     return True
 
