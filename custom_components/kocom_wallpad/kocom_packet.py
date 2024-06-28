@@ -24,6 +24,8 @@ class Device(IntEnum):
 class Command(IntEnum):
     Get = 0x3A
     Set = 0x00
+    Lock = 0x02  # Gas valve only
+    Unlock = 0x01  # Gas valve only
 
 
 class KocomPacket(bytes):

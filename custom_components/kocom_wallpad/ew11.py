@@ -44,6 +44,11 @@ class Ew11:
         else:
             self.fan = None
 
+        if data["gas"]:
+            self.gas_valve = GasValve(self)
+        else:
+            self.gas_valve = None
+
     async def connect(self) -> None:
         """Connect to the device."""
         self._reader, self._writer = await asyncio.open_connection(
@@ -85,6 +90,9 @@ class Ew11:
                 case (Device.Fan, _):
                     if self.fan:
                         self.fan.update(packet.value)
+                case (Device.GasValve, _):
+                    if self.gas_valve:
+                        self.gas_valve.update(packet.cmd)
                 case _:
                     pass
 
@@ -278,4 +286,24 @@ class Fan(_Component):
 
     def update(self, state: list[int]):
         self._state = state
+        super().update()
+
+
+class GasValve(_Component):
+    def __init__(self, ew11: Ew11) -> None:
+        super().__init__(ew11)
+        self.is_locked = False
+
+    async def refresh(self) -> None:
+        await self._ew11.send(KocomPacket.create(Device.GasValve, Command.Get))
+
+    async def lock(self) -> None:
+        await self._ew11.send(KocomPacket.create(Device.GasValve, Command.Lock))
+
+    def update(self, command: Command) -> None:
+        match command:
+            case Command.Lock:
+                self.is_locked = True
+            case Command.Unlock:
+                self.is_locked = False
         super().update()
