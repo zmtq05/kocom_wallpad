@@ -56,7 +56,7 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
                     return self.async_update_reload_and_abort(entry, data=data)
 
                 return self.async_create_entry(
-                    title=f"EW11_{data[CONF_HOST]}",
+                    title=f"EW11_{len(self._async_current_entries()) + 1}",
                     data=data,
                 )
 
