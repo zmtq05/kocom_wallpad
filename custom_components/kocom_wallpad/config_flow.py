@@ -35,12 +35,11 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Handle a flow initialized by the user."""
-        schema = self._schema_with_prev_data()
+        data_schema = self._schema_with_prev_data()
         errors = {}
-        description_placeholders = {}
         if user_input is not None:
             data = self._parse_user_input(user_input)
-            errors, description_placeholders = self._validate_input(data)
+            errors = self._validate_input(data)
 
             try:
                 await _test_connection(self.hass, user_input)
@@ -62,9 +61,8 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",  # reuse same translate when triggered by reconfigure
-            data_schema=schema,
+            data_schema=data_schema,
             errors=errors,
-            description_placeholders=description_placeholders,
         )
 
     def _parse_user_input(self, user_input: dict[str, Any]) -> EntryData:
@@ -89,9 +87,9 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle reconfiguration."""
         return await self.async_step_user(user_input)
 
-    def _validate_input(self, parsed_user_input: EntryData):
+    def _validate_input(self, parsed_user_input: EntryData) -> dict[str, str]:
         this_entry_id = self.context.get("entry_id")
-        errors, description_placeholders = {}, {}
+        errors = {}
 
         for entry in self._async_current_entries(include_ignore=False):
             if entry.entry_id == this_entry_id:
@@ -126,7 +124,7 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             # other entry selected elevator
             if parsed_user_input[CONF_ELEVATOR] and data[CONF_ELEVATOR]:
                 errors[CONF_ELEVATOR] = "selected_by_other_entry"
-        return errors, description_placeholders
+        return errors
 
     def _schema_with_prev_data(self) -> vol.Schema:
         current_entry = self.hass.config_entries.async_get_entry(
