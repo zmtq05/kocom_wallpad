@@ -18,6 +18,7 @@ async def async_setup_entry(
     """Set up the Kocom Wallpad light entity."""
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     for controller in hub.light_controllers.values():
+        await controller.refresh()
         async_add_entities(
             [KocomLightEntity(controller, n) for n in range(controller.size)]
         )
@@ -57,7 +58,6 @@ class KocomLightEntity(LightEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register the callback."""
-        await self.controller.refresh()
         self.controller.register_callback(self.async_write_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:
