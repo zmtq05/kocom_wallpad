@@ -8,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .ew11 import Ew11, LightController
+from .hub import Hub, LightController
 from .util import typed_data
 from .const import CONF_LIGHT, DOMAIN
 
@@ -16,12 +16,12 @@ from .const import CONF_LIGHT, DOMAIN
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    ew11: Ew11 = hass.data[DOMAIN][entry.entry_id]
+    hub: Hub = hass.data[DOMAIN][entry.entry_id]
     data = typed_data(entry)
     for room, light_size in data[CONF_LIGHT].items():
         room = int(room)
-        controller = ew11.light_controllers[room]
-        entry.async_create_task(hass, controller.init())
+        controller = hub.light_controllers[room]
+        entry.async_create_task(hass, controller.refresh())
         async_add_entities(
             [KocomLight(room, light, controller) for light in range(light_size)]
         )

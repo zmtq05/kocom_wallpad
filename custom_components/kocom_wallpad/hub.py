@@ -17,11 +17,9 @@ from .util import typed_data
 _LOGGER = logging.getLogger(__name__)
 
 
-class Ew11:
-    """Ew11 Wrapper."""
+class Hub:
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Ew11 Wrapper."""
         data = typed_data(entry)
         self._entry = entry
         self._hass = hass
@@ -84,15 +82,15 @@ class Ew11:
 
             match packet.src:
                 case (Device.Light, room):
-                    self.light_controllers[room].update(packet.value)
+                    await self.light_controllers[room]._handle_packet(packet)
                 case (Device.Thermostat, room):
-                    self.thermostats[room].update(packet.value)
+                    await self.thermostats[room]._handle_packet(packet)
                 case (Device.Fan, _):
                     if self.fan:
-                        self.fan.update(packet.value)
+                        await self.fan._handle_packet(packet)
                 case (Device.GasValve, _):
                     if self.gas_valve:
-                        self.gas_valve.update(packet.cmd)
+                        await self.gas_valve._handle_packet(packet)
                 case _:
                     pass
 
@@ -106,14 +104,19 @@ class Ew11:
             await asyncio.sleep(1)  # prevent packet collision
             self._send_queue.task_done()
 
-    async def send(self, packet: KocomPacket) -> None:
-        """Send a packet."""
-        await self._send_queue.put(packet)
+    async def send(
+        self,
+        dst: Device | tuple[Device, int],
+        command: Command,
+        value: list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
+    ) -> None:
+        await self._send_queue.put(KocomPacket.create(dst, command, value))
 
 
-class _Component:
-    def __init__(self, ew11: Ew11) -> None:
-        self._ew11: Ew11 = ew11
+class _HubChild:
+    def __init__(self, hub: Hub, device: Device | tuple[Device, int]) -> None:
+        self._hub = hub
+        self._device = device
         self._callbacks: set[Callable[[], None]] = set()
 
     def register_callback(self, callback: Callable[[], None]) -> None:
@@ -124,80 +127,67 @@ class _Component:
         """Unregister callback."""
         self._callbacks.discard(callback)
 
-    def update(self):
+    async def write_ha_state(self):
         for async_write_ha_state in self._callbacks:
             async_write_ha_state()
 
+    async def refresh(self) -> None:
+        await self._hub.send(self._device, Command.Get)
 
-class LightController(_Component):
-    """Control the lighting in a room."""
 
-    def __init__(self, ew11: Ew11, room: int, light_size: int) -> None:
-        super().__init__(ew11)
+class LightController(_HubChild):
+    """Control the lights."""
+
+    def __init__(self, hub: Hub, room: int, light_size: int) -> None:
+        super().__init__(hub, (Device.Light, room))
         self._room: int = room
         self._size: int = light_size
-        self._state: list[int] = [0] * 8
+        self._state: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
         self._task = None
 
-    async def _spawn_task_if_not_exists(self) -> None:
+    async def _set(self) -> None:
         # 일괄 점등, 소등용 batch
         # 하나의 조명마다 패킷을 보내는 대신
         # 일정시간 기다렸다가 하나로 모아서 보냄
         async def task():
             await asyncio.sleep(0.2)
-            await self._ew11.send(
-                KocomPacket.create(
-                    (Device.Light, self._room),
-                    Command.Set,
-                    self._state,
-                )
+            await self._hub.send(
+                (Device.Light, self._room),
+                Command.Set,
+                self._state,
             )
 
         if not self._task:
-            self._task = self._ew11._entry.async_create_task(
-                self._ew11._hass, task(), "order"
+            self._task = self._hub._entry.async_create_task(
+                self._hub._hass, task(), "set"
             )
 
     async def turn_on(self, light: int) -> None:
         """Turn on the light."""
         self._state[light] = 0xFF
-        await self._spawn_task_if_not_exists()
+        await self._set()
 
     async def turn_off(self, light: int) -> None:
         """Turn off the light."""
-        self._state[light] = 0
-        await self._spawn_task_if_not_exists()
+        self._state[light] = 0x00
+        await self._set()
 
     def is_on(self, light: int) -> bool:
         """Return true if the light is on."""
         return self._state[light] == 0xFF
 
-    async def init(self) -> None:
-        """Initialize the lights."""
-        await self._ew11.send(
-            KocomPacket.create((Device.Light, self._room), Command.Get)
-        )
-
-    def update(self, state: list[int]) -> None:
-        self._state = state
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        self._state = packet.value
         _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
-        super().update()
+        await self.write_ha_state()
         self._task = None
 
 
-class Thermostat(_Component):
-    def __init__(self, ew11: Ew11, room: int) -> None:
-        super().__init__(ew11)
-        self.room = room
+class Thermostat(_HubChild):
+    def __init__(self, ew11: Hub, room: int) -> None:
+        super().__init__(ew11, (Device.Thermostat, room))
         self._state = [0, 0, 0, 0, 0, 0, 0, 0]
-
-    async def refresh(self) -> None:
-        await self._ew11.send(
-            KocomPacket.create(
-                dst=(Device.Thermostat, self.room),
-                cmd=Command.Get,
-            )
-        )
+        self.room = room
 
     @property
     def is_on(self) -> bool:
@@ -235,16 +225,14 @@ class Thermostat(_Component):
         await self._send()
 
     async def _send(self):
-        await self._ew11.send(
-            KocomPacket.create(
-                (Device.Thermostat, self.room),
-                Command.Set,
-                self._state,
-            )
+        await self._hub.send(
+            self._device,
+            Command.Set,
+            self._state,
         )
 
-    def update(self, state: list[int]) -> None:
-        self._state = list(state)
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        self._state = packet.value
 
         _LOGGER.info(
             "Thermostat { room: %s, on: %s, away: %s, target: %s, current: %s }",
@@ -254,19 +242,16 @@ class Thermostat(_Component):
             self.target_temp,
             self.current_temp,
         )
-        super().update()
+        await self.write_ha_state()
 
 
-class Fan(_Component):
-    def __init__(self, ew11: Ew11) -> None:
-        super().__init__(ew11)
+class Fan(_HubChild):
+    def __init__(self, ew11: Hub) -> None:
+        super().__init__(ew11, Device.Fan)
         self._state = [0, 0x01, 0, 0, 0, 0, 0, 0]
 
     async def _send(self) -> None:
-        await self._ew11.send(KocomPacket.create(Device.Fan, Command.Set, self._state))
-
-    async def refresh(self) -> None:
-        await self._ew11.send(KocomPacket.create(Device.Fan, Command.Get))
+        await self._hub.send(Device.Fan, Command.Set, self._state)
 
     @property
     def is_on(self) -> bool:
@@ -284,26 +269,23 @@ class Fan(_Component):
             self._state[2] = step * 0x40
         await self._send()
 
-    def update(self, state: list[int]):
-        self._state = state
-        super().update()
+    async def _handle_packet(self, packet: KocomPacket):
+        self._state = packet.value
+        await self.write_ha_state()
 
 
-class GasValve(_Component):
-    def __init__(self, ew11: Ew11) -> None:
-        super().__init__(ew11)
+class GasValve(_HubChild):
+    def __init__(self, ew11: Hub) -> None:
+        super().__init__(ew11, Device.GasValve)
         self.is_locked = False
 
-    async def refresh(self) -> None:
-        await self._ew11.send(KocomPacket.create(Device.GasValve, Command.Get))
-
     async def lock(self) -> None:
-        await self._ew11.send(KocomPacket.create(Device.GasValve, Command.Lock))
+        await self._hub.send(Device.GasValve, Command.Lock)
 
-    def update(self, command: Command) -> None:
-        match command:
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        match packet.cmd:
             case Command.Lock:
                 self.is_locked = True
             case Command.Unlock:
                 self.is_locked = False
-        super().update()
+        await self.write_ha_state()

@@ -7,15 +7,15 @@ from homeassistant.util.percentage import (
     percentage_to_ordered_list_item,
 )
 
-from .ew11 import Ew11, Fan
+from .hub import Hub, Fan
 from .const import DOMAIN
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    ew11: Ew11 = hass.data[DOMAIN][entry.entry_id]
-    if fan := ew11.fan:
+    hub: Hub = hass.data[DOMAIN][entry.entry_id]
+    if fan := hub.fan:
         async_add_entities([KocomIntegrationFan(fan)])
 
 
