@@ -1,7 +1,5 @@
 """Ew11 Wrapper."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from collections.abc import Callable
@@ -10,7 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_LIGHT, CONF_THERMO
+from .const import CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO
 from .kocom_packet import KocomPacket, PacketType, Device, Command
 from .util import typed_data
 
@@ -18,31 +16,33 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class Hub:
+    """Hub for managing connections and devices."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Initialize the Hub."""
         data = typed_data(entry)
         self._entry = entry
         self._hass = hass
         self._host = data[CONF_HOST]
         self._port = data[CONF_PORT]
         self._reader, self._writer = None, None
-        self._send_queue = asyncio.Queue()
+        self._send_queue: asyncio.Queue[KocomPacket] = asyncio.Queue()
 
-        self.light_controllers = {
+        self.light_controllers: dict[int, LightController] = {
             int(room): LightController(self, int(room), light_size)
             for room, light_size in data[CONF_LIGHT].items()
         }
 
-        self.thermostats = {
+        self.thermostats: dict[int, Thermostat] = {
             int(room): Thermostat(self, int(room)) for room in data[CONF_THERMO]
         }
 
-        if data["fan"]:
+        if data[CONF_FAN]:
             self.fan = Fan(self)
         else:
             self.fan = None
 
-        if data["gas"]:
+        if data[CONF_GAS]:
             self.gas_valve = GasValve(self)
         else:
             self.gas_valve = None
@@ -77,7 +77,8 @@ class Hub:
                 _LOGGER.warning("Invalid packet: %s", data.hex(" ").upper())
                 continue
 
-            if packet.type != PacketType.Seq:
+            if packet.type == PacketType.Ack:
+                # ignore
                 continue
 
             match packet.src:
@@ -110,6 +111,7 @@ class Hub:
         command: Command,
         value: list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
     ) -> None:
+        """Send a packet."""
         await self._send_queue.put(KocomPacket.create(dst, command, value))
 
 
@@ -128,10 +130,12 @@ class _HubChild:
         self._callbacks.discard(callback)
 
     async def write_ha_state(self):
+        """Write HA state."""
         for async_write_ha_state in self._callbacks:
             async_write_ha_state()
 
     async def refresh(self) -> None:
+        """Refresh the device."""
         await self._hub.send(self._device, Command.Get)
 
 
@@ -139,9 +143,11 @@ class LightController(_HubChild):
     """Control the lights."""
 
     def __init__(self, hub: Hub, room: int, light_size: int) -> None:
+        """Initialize the LightController."""
         super().__init__(hub, (Device.Light, room))
         self._room: int = room
         self._size: int = light_size
+        # 0~7 - light; on: FF / off: 00
         self._state: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
         self._task = None
 
@@ -162,14 +168,14 @@ class LightController(_HubChild):
                 self._hub._hass, task(), "set"
             )
 
-    async def turn_on(self, light: int) -> None:
+    async def turn_on(self, n: int) -> None:
         """Turn on the light."""
-        self._state[light] = 0xFF
+        self._state[n] = 0xFF
         await self._set()
 
-    async def turn_off(self, light: int) -> None:
+    async def turn_off(self, n: int) -> None:
         """Turn off the light."""
-        self._state[light] = 0x00
+        self._state[n] = 0x00
         await self._set()
 
     def is_on(self, light: int) -> bool:
@@ -178,53 +184,71 @@ class LightController(_HubChild):
 
     async def _handle_packet(self, packet: KocomPacket) -> None:
         self._state = packet.value
-        _LOGGER.info("Room %s Light: %s", self._room, self._state[: self._size])
+        state_str = ", ".join(
+            f"{i+1}: on" if x == 0xFF else f"{i+1}: off"
+            for i, x in enumerate(self._state[: self._size])
+        )
+        _LOGGER.info("Light: { room: %s, %s }", self._room, state_str)
         await self.write_ha_state()
         self._task = None
 
 
 class Thermostat(_HubChild):
+    """Control the thermostat."""
+
     def __init__(self, ew11: Hub, room: int) -> None:
+        """Initialize the Thermostat."""
         super().__init__(ew11, (Device.Thermostat, room))
+        # 0+1 - mode; on: 11 00 / off: 01 00 / away: 11 01
+        # 2 - target temperature
+        # 4 - current temperature
         self._state = [0, 0, 0, 0, 0, 0, 0, 0]
         self.room = room
 
     @property
     def is_on(self) -> bool:
+        """Return true if the thermostat is on."""
         return self._state[0] == 0x11
 
     @property
     def is_away(self) -> bool:
+        """Return true if the thermostat mode is away."""
         return self._state[1] == 0x01
 
     @property
     def target_temp(self) -> int:
+        """Return the target temperature."""
         return self._state[2]
 
     @property
     def current_temp(self) -> int:
+        """Return the current temperature."""
         return self._state[4]
 
-    async def set_temp(self, target_temp: int):
+    async def set_temp(self, target_temp: int) -> None:
+        """Set the target temperature."""
         self._state[2] = target_temp
         await self._send()
 
-    async def on(self):
+    async def on(self) -> None:
+        """Turn on the thermostat."""
         self._state[0] = 0x11
         self._state[1] = 0x00
         await self._send()
 
-    async def off(self):
+    async def off(self) -> None:
+        """Turn off the thermostat."""
         self._state[0] = 0x01
         self._state[1] = 0x00
         await self._send()
 
     async def away(self) -> None:
-        self._state[0] = 0x11  # on
-        self._state[1] = 0x01  # away
+        """Set the thermostat to away mode."""
+        self._state[0] = 0x11
+        self._state[1] = 0x01
         await self._send()
 
-    async def _send(self):
+    async def _send(self) -> None:
         await self._hub.send(
             self._device,
             Command.Set,
@@ -235,7 +259,7 @@ class Thermostat(_HubChild):
         self._state = packet.value
 
         _LOGGER.info(
-            "Thermostat { room: %s, on: %s, away: %s, target: %s, current: %s }",
+            "Thermostat { room: %s, on: %s, away: %s, target_temp: %s, current_temp: %s }",
             self.room,
             self.is_on,
             self.is_away,
@@ -246,8 +270,14 @@ class Thermostat(_HubChild):
 
 
 class Fan(_HubChild):
+    """Control the fan."""
+
     def __init__(self, ew11: Hub) -> None:
+        """Initialize the Fan."""
         super().__init__(ew11, Device.Fan)
+        # 0 - mode; on: 11 / off: 00
+        # 1 - fixed(01)
+        # 2 - step; 40, 80, C0
         self._state = [0, 0x01, 0, 0, 0, 0, 0, 0]
 
     async def _send(self) -> None:
@@ -255,13 +285,16 @@ class Fan(_HubChild):
 
     @property
     def is_on(self) -> bool:
+        """Return true if the fan is on."""
         return self._state[0] == 0x11
 
     @property
     def step(self) -> int:
+        """Return the current step."""
         return self._state[2] // 0x40
 
-    async def set_step(self, step: int):
+    async def set_step(self, step: int) -> None:
+        """Set the fan speed."""
         if step == 0:
             self._state[0] = 0x00
         else:
@@ -269,17 +302,22 @@ class Fan(_HubChild):
             self._state[2] = step * 0x40
         await self._send()
 
-    async def _handle_packet(self, packet: KocomPacket):
+    async def _handle_packet(self, packet: KocomPacket) -> None:
         self._state = packet.value
+        _LOGGER.info("Fan { on: %s, step: %s }", self.is_on, self.step)
         await self.write_ha_state()
 
 
 class GasValve(_HubChild):
+    """Control the gas valve."""
+
     def __init__(self, ew11: Hub) -> None:
+        """Initialize the GasValve."""
         super().__init__(ew11, Device.GasValve)
         self.is_locked = False
 
     async def lock(self) -> None:
+        """Lock the gas valve."""
         await self._hub.send(Device.GasValve, Command.Lock)
 
     async def _handle_packet(self, packet: KocomPacket) -> None:
@@ -288,4 +326,5 @@ class GasValve(_HubChild):
                 self.is_locked = True
             case Command.Unlock:
                 self.is_locked = False
+        _LOGGER.info("GasValve { locked: %s }", self.is_locked)
         await self.write_ha_state()
