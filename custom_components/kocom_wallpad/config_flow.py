@@ -21,6 +21,7 @@ from .const import (
     CONF_GAS,
     CONF_LIGHT,
     CONF_THERMO,
+    CONF_THERMO_POLL_INTERVAL,
     DOMAIN,
 )
 
@@ -155,6 +156,10 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         schema_device = {
             vol.Optional(CONF_LIGHT, default=conf_light_default): cv.string,  # type: ignore
             vol.Optional(CONF_THERMO, default=conf_thermo_default): cv.string,  # type: ignore
+            vol.Optional(
+                CONF_THERMO_POLL_INTERVAL,
+                default=get_prev(CONF_THERMO_POLL_INTERVAL, 60),
+            ): cv.positive_int,
             vol.Optional(CONF_FAN, default=get_prev(CONF_FAN, False)): cv.boolean,
             vol.Optional(CONF_GAS, default=get_prev(CONF_GAS, False)): cv.boolean,
             vol.Optional(

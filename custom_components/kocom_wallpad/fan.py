@@ -19,22 +19,23 @@ async def async_setup_entry(
     """Set up the Kocom fan entity."""
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     if fan := hub.fan:
-        async_add_entities([KocomIntegrationFan(fan)])
+        async_add_entities([KocomFanEntity(fan)])
 
 
 ORDERED_NAMED_FAN_SPEEDS = [1, 2, 3]
 
 
-class KocomIntegrationFan(FanEntity):
+class KocomFanEntity(FanEntity):
     """Kocom fan entity."""
+
+    _attr_supported_features = FanEntityFeature.SET_SPEED
+    _attr_speed_count = len(ORDERED_NAMED_FAN_SPEEDS)
 
     def __init__(self, fan: Fan) -> None:
         """Initialize the Kocom fan entity."""
         self.fan = fan
         self._attr_unique_id = "fan"
-        self._attr_name = "환기"
-        self._attr_supported_features = FanEntityFeature.SET_SPEED
-        self._attr_speed_count = len(ORDERED_NAMED_FAN_SPEEDS)
+        self._attr_name = "전열교환기"
 
     @property
     def is_on(self):
