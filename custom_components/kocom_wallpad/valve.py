@@ -6,16 +6,16 @@ from homeassistant.components.valve import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from .ew11 import Ew11, GasValve
+from .hub import Hub, GasValve
 from .const import DOMAIN
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    ew11: Ew11 = hass.data[DOMAIN][entry.entry_id]
-    if ew11.gas_valve:
-        async_add_entities([KocomIntegrationGasValve(ew11.gas_valve)])
+    hub: Hub = hass.data[DOMAIN][entry.entry_id]
+    if hub.gas_valve:
+        async_add_entities([KocomIntegrationGasValve(hub.gas_valve)])
 
 
 class KocomIntegrationGasValve(ValveEntity):

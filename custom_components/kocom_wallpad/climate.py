@@ -13,25 +13,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import UnitOfTemperature
 
-from .ew11 import Ew11, Thermostat
+from .hub import Hub, Thermostat
 from .const import DOMAIN
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ):
-    async def polling(ew11: Ew11):
+    async def polling(hub: Hub):
         while True:
             # refresh thermostats every 60 seconds
             # no packets when controlling the target temperature
-            for thermostat in ew11.thermostats.values():
+            for thermostat in hub.thermostats.values():
                 await thermostat.refresh()
             await asyncio.sleep(60)
 
-    ew11: Ew11 = hass.data[DOMAIN][entry.entry_id]
-    entry.async_create_background_task(hass, polling(ew11), "polling_thermostat")
+    hub: Hub = hass.data[DOMAIN][entry.entry_id]
+    entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
 
-    for room, thermostat in ew11.thermostats.items():
+    for room, thermostat in hub.thermostats.items():
         async_add_entities([KocomIntegrationThermostat(room, thermostat)])
 
 
