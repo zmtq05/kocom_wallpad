@@ -64,6 +64,7 @@ class Hub:
 
     async def read_loop(self) -> None:
         """Listen for incoming messages."""
+        _LOGGER.debug("Read loop started")
         while self._reader is not None:
             data = await self._reader.read(21)
 
@@ -94,9 +95,11 @@ class Hub:
                         await self.gas_valve._handle_packet(packet)
                 case _:
                     pass
+        _LOGGER.debug("Read loop finished")
 
     async def send_loop(self) -> None:
         """Send packets."""
+        _LOGGER.debug("Send loop started")
         while self._writer is not None:
             packet = await self._send_queue.get()
             _LOGGER.debug("->(%s) %s", self._host, packet)
@@ -104,6 +107,7 @@ class Hub:
             await self._writer.drain()
             await asyncio.sleep(1)  # prevent packet collision
             self._send_queue.task_done()
+        _LOGGER.debug("Send loop finished")
 
     async def send(
         self,
