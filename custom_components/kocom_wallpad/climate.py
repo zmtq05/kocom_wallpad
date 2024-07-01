@@ -15,8 +15,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import UnitOfTemperature
 
+from .util import typed_data
+
 from .hub import Hub, Thermostat
-from .const import DOMAIN
+from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN
 
 
 async def async_setup_entry(
@@ -24,16 +26,21 @@ async def async_setup_entry(
 ):
     """Set up the Kocom Wallpad climate entity."""
 
+    data = typed_data(entry)
+    interval = data.get(CONF_THERMO_POLL_INTERVAL, 60)
+
     async def polling(hub: Hub):
         while True:
             # refresh thermostats every 60 seconds
             # no packets when controlling the target temperature
+            await asyncio.sleep(interval)
             for thermostat in hub.thermostats.values():
                 await thermostat.refresh()
-            await asyncio.sleep(60)
 
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
-    entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
+
+    if interval > 0:
+        entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
 
     for room, thermostat in hub.thermostats.items():
         async_add_entities([KocomThermostatEntity(room, thermostat)])
@@ -42,7 +49,7 @@ async def async_setup_entry(
 class KocomThermostatEntity(ClimateEntity):
     """Kocom thermostat entity."""
 
-    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+    _attr_hvac_modes = [HVACMode.HEAT]
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 1
     _attr_supported_features = (
@@ -113,6 +120,7 @@ class KocomThermostatEntity(ClimateEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register the callback."""
+        await self.thermostat.refresh()
         self.thermostat.register_callback(self.async_write_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:

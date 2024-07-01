@@ -11,6 +11,7 @@ class EntryData(TypedDict):
     port: int
     light: dict[str, int]
     thermostat: dict[str, bool]
+    thermostat_poll_interval: int
     fan: bool
     gas: bool
     elevator: bool
