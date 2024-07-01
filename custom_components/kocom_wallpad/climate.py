@@ -36,26 +36,27 @@ async def async_setup_entry(
     entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
 
     for room, thermostat in hub.thermostats.items():
-        async_add_entities([KocomIntegrationThermostat(room, thermostat)])
+        async_add_entities([KocomThermostatEntity(room, thermostat)])
 
 
-class KocomIntegrationThermostat(ClimateEntity):
+class KocomThermostatEntity(ClimateEntity):
     """Kocom thermostat entity."""
+
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_target_temperature_step = 1
+    _attr_supported_features = (
+        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
+    )
+    _attr_preset_modes = [PRESET_NONE, PRESET_AWAY]
+    _attr_preset_mode = PRESET_NONE
 
     def __init__(self, room: int, thermostat: Thermostat) -> None:
         """Initialize the Kocom thermostat entity."""
         self.room = room
         self.thermostat = thermostat
-        self._attr_unique_id = f"room_{room}_thermostat"
-        self._attr_name = f"방{room} 보일러"
-        self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
-        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
-        self._attr_target_temperature_step = 1
-        self._attr_supported_features = (
-            ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.PRESET_MODE
-        )
-        self._attr_preset_modes = [PRESET_NONE, PRESET_AWAY]
-        self._attr_preset_mode = PRESET_NONE
+        self._attr_unique_id = f"thermostat_{room}"
+        self._attr_name = f"보일러{room}"
 
     @property
     def current_temperature(self) -> float:
