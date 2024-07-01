@@ -1,11 +1,10 @@
+"""Kocom Wallpad integration."""
+
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
 from homeassistant.config_entries import ConfigEntry
 
-from custom_components.kocom_wallpad.util import typed_data
-
 from .hub import Hub
-
 from .const import DOMAIN
 
 PLATFORMS: list[Platform] = [
@@ -16,7 +15,8 @@ PLATFORMS: list[Platform] = [
 ]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up the Kocom Wallpad integration from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = hub = Hub(hass, entry)
     await hub.connect()
@@ -27,7 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload the Kocom Wallpad integration."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hub: Hub = hass.data[DOMAIN].pop(entry.entry_id)
         await hub.disconnect()

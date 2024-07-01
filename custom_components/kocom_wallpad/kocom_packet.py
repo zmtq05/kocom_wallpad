@@ -8,11 +8,15 @@ _FOOTER = [0x0D, 0x0D]
 
 
 class PacketType(IntEnum):
+    """Packet type."""
+
     Seq = 0xBC
     Ack = 0xDC
 
 
 class Device(IntEnum):
+    """Device type."""
+
     Wallpad = 0x01
     Light = 0x0E
     Thermostat = 0x36
@@ -22,6 +26,8 @@ class Device(IntEnum):
 
 
 class Command(IntEnum):
+    """Command type."""
+
     Get = 0x3A
     Set = 0x00
     Lock = 0x02  # Gas valve only
@@ -29,6 +35,8 @@ class Command(IntEnum):
 
 
 class KocomPacket(bytes):
+    """Kocom packet."""
+
     @classmethod
     def create(
         cls,
@@ -36,6 +44,7 @@ class KocomPacket(bytes):
         cmd: Command,
         value: list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
     ) -> Self:
+        """Create a packet."""
         if isinstance(dst, Device):
             dst = (dst, 0x00)
 
@@ -48,6 +57,7 @@ class KocomPacket(bytes):
         return cls(bytes(_HEADER + body + _FOOTER))
 
     def __init__(self, packet: bytes) -> None:
+        """Initialize the packet."""
         assert len(packet) == 21, "Invalid packet length"
         assert packet[:2] == b"\xaa\x55", "Invalid header"
         assert packet[-2:] == b"\x0d\x0d", "Invalid footer"
@@ -65,4 +75,5 @@ class KocomPacket(bytes):
         self.checksum: int = packet[18]
 
     def __str__(self) -> str:
+        """Return the packet as a string."""
         return self.hex(" ").upper()
