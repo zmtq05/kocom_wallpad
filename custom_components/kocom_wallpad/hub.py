@@ -145,8 +145,8 @@ class LightController(_HubChild):
     def __init__(self, hub: Hub, room: int, light_size: int) -> None:
         """Initialize the LightController."""
         super().__init__(hub, (Device.Light, room))
-        self._room: int = room
-        self._size: int = light_size
+        self.room: int = room
+        self.size: int = light_size
         # 0~7 - light; on: FF / off: 00
         self._state: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
         self._task = None
@@ -158,7 +158,7 @@ class LightController(_HubChild):
         async def task():
             await asyncio.sleep(0.2)
             await self._hub.send(
-                (Device.Light, self._room),
+                self._device,
                 Command.Set,
                 self._state,
             )
@@ -186,9 +186,9 @@ class LightController(_HubChild):
         self._state = packet.value
         state_str = ", ".join(
             f"{i+1}: on" if x == 0xFF else f"{i+1}: off"
-            for i, x in enumerate(self._state[: self._size])
+            for i, x in enumerate(self._state[: self.size])
         )
-        _LOGGER.info("Light: { room: %s, %s }", self._room, state_str)
+        _LOGGER.info("Light: { room: %s, %s }", self.room, state_str)
         await self.write_ha_state()
         self._task = None
 
