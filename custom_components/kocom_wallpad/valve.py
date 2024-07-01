@@ -18,20 +18,21 @@ async def async_setup_entry(
     """Set up the Kocom Wallpad valve entity."""
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     if hub.gas_valve:
-        async_add_entities([KocomIntegrationGasValve(hub.gas_valve)])
+        async_add_entities([KocomGasValveEntity(hub.gas_valve)])
 
 
-class KocomIntegrationGasValve(ValveEntity):
+class KocomGasValveEntity(ValveEntity):
     """Kocom gas valve entity."""
+
+    _attr_device_class = ValveDeviceClass.GAS
+    _attr_supported_features = ValveEntityFeature.CLOSE
+    _attr_reports_position = False
 
     def __init__(self, gas_valve: GasValve) -> None:
         """Initialize the Kocom gas valve entity."""
         self.gas_valve = gas_valve
         self._attr_unique_id = "gas_valve"
         self._attr_name = "가스 밸브"
-        self._attr_device_class = ValveDeviceClass.GAS
-        self._attr_supported_features = ValveEntityFeature.CLOSE
-        self._attr_reports_position = False
 
     @property
     def is_closed(self) -> bool:
