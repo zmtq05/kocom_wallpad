@@ -42,6 +42,10 @@
     - on / off
     - 3단계 조절
 
+## 적용 화면
+
+![기본 대시보드](images/default_dashboard.png)
+
 
 ## Contributions are welcome!
 
