@@ -4,9 +4,9 @@
 [![GitHub Activity][commits-shield]][commits]
 [![License][license-shield]](LICENSE)
 
-코콤 월패드를 홈 어시스턴트에서 사용할 수 있도록 하는 통합구성요소입니다.
+코콤 월패드를 홈 어시스턴트에 연동하는 통합구성요소입니다.
 
-두 개의 소켓을 사용할 경우에 유용합니다.
+두 개의 소켓을 사용하는 경우에 유용합니다.
 
 > [!IMPORTANT]
 > 이 통합구성요소는 소켓(EW11) 연결만 지원합니다.
