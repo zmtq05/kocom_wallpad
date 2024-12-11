@@ -11,10 +11,9 @@ from homeassistant.components.light import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.device_registry import DeviceInfo
 
 from .hub import Hub, LightController
-from .const import DOMAIN, NAME, VERSION, DEVICE_ID
+from .const import DOMAIN
 
 
 async def async_setup_entry(
@@ -48,13 +47,6 @@ class KocomLightEntity(LightEntity):
     _attr_supported_color_modes = {ColorMode.ONOFF}
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_device_info = DeviceInfo(
-        identifiers={(DOMAIN, DEVICE_ID)},
-        name=NAME,
-        manufacturer="KOCOM",
-        model="월패드",
-        sw_version=VERSION,
-    )
 
     def __init__(
         self,
