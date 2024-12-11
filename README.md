@@ -1,47 +1,41 @@
-# Notice
+# Kocom Wallpad
 
-The component and platforms in this repository are not meant to be used by a
-user, but as a "blueprint" that custom component developers can build
-upon, to make more awesome stuff.
+[![GitHub Release][releases-shield]][releases]
+[![GitHub Activity][commits-shield]][commits]
+[![License][license-shield]](LICENSE)
 
-HAVE FUN! 😎
+코콤 월패드를 홈 어시스턴트에서 사용할 수 있도록 하는 통합구성요소입니다.
 
-## Why?
+## 설치 방법
 
-This is simple, by having custom_components look (README + structure) the same
-it is easier for developers to help each other and for users to start using them.
+1. 홈 어시스턴트 설정 폴더(configuration.yaml이 있는 폴더)로 이동합니다.
+1. 만약 `custom_components` 폴더가 없다면 생성합니다.
+1. `custom_components` 폴더 안에 `kocom_wallpad` 폴더를 생성합니다.
+1. 다운로드한 파일을 생성한 폴더에 복사합니다.
+1. 홈 어시스턴트를 재시작합니다.
+1. 홈 어시스턴트 설정 페이지에서 "기기 및 서비스" -> "통합구성요소" -> "+ 통합구성요소 추가하기" 버튼을 눌러 "kocom wallpad"를 검색하여 설치합니다.
 
-If you are a developer and you want to add things to this "blueprint" that you think more
-developers will have use for, please open a PR to add it :)
+## 기능
 
-## What?
+- 조명
+    - on / off
+- 난방
+    - on / off / away
+    - 목표 온도 설정 / 현재 온도 표시
+- 가스밸브
+    - 닫기
+- 환기(전열교환기)
+    - on / off
+    - 3단계 조절
 
-This repository contains multiple files, here is a overview:
 
-File | Purpose | Documentation
--- | -- | --
-`.devcontainer.json` | Used for development/testing with Visual Studio Code. | [Documentation](https://code.visualstudio.com/docs/remote/containers)
-`.github/ISSUE_TEMPLATE/*.yml` | Templates for the issue tracker | [Documentation](https://help.github.com/en/github/building-a-strong-community/configuring-issue-templates-for-your-repository)
-`.vscode/tasks.json` | Tasks for the devcontainer. | [Documentation](https://code.visualstudio.com/docs/editor/tasks)
-`custom_components/integration_blueprint/*` | Integration files, this is where everything happens. | [Documentation](https://developers.home-assistant.io/docs/creating_component_index)
-`CONTRIBUTING.md` | Guidelines on how to contribute. | [Documentation](https://help.github.com/en/github/building-a-strong-community/setting-guidelines-for-repository-contributors)
-`LICENSE` | The license file for the project. | [Documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/licensing-a-repository)
-`README.md` | The file you are reading now, should contain info about the integration, installation and configuration instructions. | [Documentation](https://help.github.com/en/github/writing-on-github/basic-writing-and-formatting-syntax)
-`requirements.txt` | Python packages used for development/lint/testing this integration. | [Documentation](https://pip.pypa.io/en/stable/user_guide/#requirements-files)
+## Contributions are welcome!
 
-## How?
+If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
 
-1. Create a new repository in GitHub, using this repository as a template by clicking the "Use this template" button in the GitHub UI.
-1. Open your new repository in Visual Studio Code devcontainer (Preferably with the "`Dev Containers: Clone Repository in Named Container Volume...`" option).
-1. Rename all instances of the `integration_blueprint` to `custom_components/<your_integration_domain>` (e.g. `custom_components/awesome_integration`).
-1. Rename all instances of the `Integration Blueprint` to `<Your Integration Name>` (e.g. `Awesome Integration`).
-1. Run the `scripts/develop` to start HA and test out your new integration.
 
-## Next steps
-
-These are some next steps you may want to look into:
-- Add tests to your integration, [`pytest-homeassistant-custom-component`](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component) can help you get started.
-- Add brand images (logo/icon) to https://github.com/home-assistant/brands.
-- Create your first release.
-- Share your integration on the [Home Assistant Forum](https://community.home-assistant.io/).
-- Submit your integration to the [HACS](https://hacs.xyz/docs/publish/start).
+[commits-shield]: https://img.shields.io/github/commit-activity/y/zmtq05/kocom_wallpad.svg?style=for-the-badge
+[commits]: https://github.com/zmtq05/kocom_wallpad/commits/main
+[license-shield]: https://img.shields.io/github/license/zmtq05/kocom_wallpad.svg?style=for-the-badge
+[releases-shield]: https://img.shields.io/github/release/zmtq05/kocom_wallpad.svg?style=for-the-badge
+[releases]: https://github.com/zmtq05/kocom_wallpad/releases
