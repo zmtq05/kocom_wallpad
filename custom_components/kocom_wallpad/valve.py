@@ -26,6 +26,7 @@ async def async_setup_entry(
         hass: The Home Assistant instance.
         entry: The config entry being setup.
         async_add_entities: Callback to add new entities to Home Assistant.
+
     """
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     if hub.gas_valve:
@@ -57,6 +58,7 @@ class KocomGasValveEntity(ValveEntity):
 
         Args:
             gas_valve: The gas valve controller instance that manages this valve.
+
         """
         self.gas_valve = gas_valve
         self._attr_unique_id = "gas_valve"
@@ -68,6 +70,7 @@ class KocomGasValveEntity(ValveEntity):
 
         Returns:
             bool: True if the valve is closed/locked, False if it's open/unlocked.
+
         """
         return self.gas_valve.is_locked
 
