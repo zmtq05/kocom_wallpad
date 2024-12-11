@@ -40,7 +40,8 @@ async def async_setup_entry(
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
 
     if interval > 0:
-        entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
+        entry.async_create_background_task(
+            hass, polling(hub), "polling_thermostat")
 
     for room, thermostat in hub.thermostats.items():
         async_add_entities([KocomThermostatEntity(room, thermostat)])
@@ -49,7 +50,7 @@ async def async_setup_entry(
 class KocomThermostatEntity(ClimateEntity):
     """Kocom thermostat entity."""
 
-    _attr_hvac_modes = [HVACMode.HEAT]
+    _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 1
     _attr_supported_features = (
