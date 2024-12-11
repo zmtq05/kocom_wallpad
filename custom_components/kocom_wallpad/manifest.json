@@ -1,10 +1,12 @@
 {
     "domain": "kocom_wallpad",
-    "name": "Kocom 월패드",
-    "codeowners": ["@zmtq05"],
+    "name": "코콤 월패드",
+    "codeowners": [
+        "@zmtq05"
+    ],
     "config_flow": true,
     "documentation": "https://github.com/zmtq05/kocom_wallpad",
-    "iot_class": "local_push",
+    "iot_class": "local_polling",
     "issue_tracker": "https://github.com/zmtq05/kocom_wallpad/issues",
     "version": "0.1.0"
 }
