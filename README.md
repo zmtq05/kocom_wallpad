@@ -11,8 +11,9 @@
 > [!IMPORTANT]
 > 이 통합구성요소는 소켓(EW11) 연결만 지원합니다.
 
-> [!NOTE]
-> 시리얼 연결 방식이 필요한 경우 다음의 add-on 중 하나를 사용하세요.
+> [!WARNING]
+> 시리얼 연결 방식이 필요하거나 이 통합구성요소를 써야만 하는 이유가 없다면 검증된 통합구성요소 또는 애드온을 사용하세요.
+> 다음은 많은 사람들이 사용하는 애드온입니다.
 > - [vifrost/kocom.py](https://github.com/vifrost/kocom.py)
 > - [kyet/kocom.py](https://github.com/kyet/kocom.py)
 > - [clipman/kocom.py](https://github.com/clipman/kocom.py)
@@ -41,6 +42,10 @@
 - 환기(전열교환기)
     - on / off
     - 3단계 조절
+
+### 지원 예정
+
+- 엘리베이터 호출 및 도착 알림
 
 ## 적용 화면
 
