@@ -28,6 +28,7 @@ async def async_setup_entry(
         hass: The Home Assistant instance.
         entry: The config entry being setup.
         async_add_entities: Callback to add new entities to Home Assistant.
+
     """
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     if fan := hub.fan:
@@ -61,6 +62,7 @@ class KocomFanEntity(FanEntity):
 
         Args:
             fan: The fan controller instance that manages this ventilation fan.
+
         """
         self.fan = fan
         self._attr_unique_id = "fan"
@@ -72,6 +74,7 @@ class KocomFanEntity(FanEntity):
 
         Returns:
             bool: True if the fan is running at any speed, False if it's off.
+
         """
         return self.fan.is_on
 
@@ -86,6 +89,7 @@ class KocomFanEntity(FanEntity):
 
         Returns:
             int: The current speed as a percentage (0-100).
+
         """
         if self.fan.step == 0:
             return 0
@@ -100,12 +104,12 @@ class KocomFanEntity(FanEntity):
                        1-33 sets to low speed.
                        34-66 sets to medium speed.
                        67-100 sets to high speed.
+
         """
         if percentage == 0:
             await self.async_turn_off()
             return
-        step = percentage_to_ordered_list_item(
-            ORDERED_NAMED_FAN_SPEEDS, percentage)
+        step = percentage_to_ordered_list_item(ORDERED_NAMED_FAN_SPEEDS, percentage)
         await self.fan.set_step(step)
 
     async def async_turn_on(self, percentage: int | None = None) -> None:
@@ -114,6 +118,7 @@ class KocomFanEntity(FanEntity):
         Args:
             percentage: Optional speed setting (0-100). If not provided,
                        defaults to medium speed (66%).
+
         """
         # TODO another frontend?
         # Currently, percentage is always None

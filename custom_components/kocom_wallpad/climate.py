@@ -41,6 +41,7 @@ async def async_setup_entry(
         hass: The Home Assistant instance.
         entry: The config entry being setup.
         async_add_entities: Callback to add new entities to Home Assistant.
+
     """
     data = typed_data(entry)
     interval = data.get(CONF_THERMO_POLL_INTERVAL, 60)
@@ -50,6 +51,7 @@ async def async_setup_entry(
 
         Args:
             hub: The Hub instance containing the thermostats to poll.
+
         """
         while True:
             # refresh thermostats every 60 seconds
@@ -61,8 +63,7 @@ async def async_setup_entry(
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
 
     if interval > 0:
-        entry.async_create_background_task(
-            hass, polling(hub), "polling_thermostat")
+        entry.async_create_background_task(hass, polling(hub), "polling_thermostat")
 
     for room, thermostat in hub.thermostats.items():
         async_add_entities([KocomThermostatEntity(room, thermostat)])
@@ -99,6 +100,7 @@ class KocomThermostatEntity(ClimateEntity):
         Args:
             room: The room number this thermostat controls.
             thermostat: The thermostat controller instance.
+
         """
         self.room = room
         self.thermostat = thermostat
@@ -111,6 +113,7 @@ class KocomThermostatEntity(ClimateEntity):
 
         Returns:
             float: The current temperature in degrees Celsius.
+
         """
         return self.thermostat.current_temp
 
@@ -120,6 +123,7 @@ class KocomThermostatEntity(ClimateEntity):
 
         Returns:
             float: The target temperature in degrees Celsius.
+
         """
         return self.thermostat.target_temp
 
@@ -129,6 +133,7 @@ class KocomThermostatEntity(ClimateEntity):
 
         Returns:
             HVACMode: HEAT if the thermostat is on, OFF otherwise.
+
         """
         if self.thermostat.is_on:
             return HVACMode.HEAT
@@ -144,6 +149,7 @@ class KocomThermostatEntity(ClimateEntity):
                 - OFF if the thermostat is off
                 - HEATING if the current temperature is below target
                 - IDLE if the target temperature is reached
+
         """
         if not self.thermostat.is_on:
             return HVACAction.OFF
@@ -157,6 +163,7 @@ class KocomThermostatEntity(ClimateEntity):
 
         Args:
             hvac_mode: The desired operation mode (HEAT or OFF).
+
         """
         match hvac_mode:
             case HVACMode.HEAT:
@@ -170,6 +177,7 @@ class KocomThermostatEntity(ClimateEntity):
         Args:
             **kwargs: Must contain 'temperature' key with the desired
                      temperature in degrees Celsius.
+
         """
         temp = int(kwargs["temperature"])
         await self.thermostat.set_temp(temp)
@@ -181,6 +189,7 @@ class KocomThermostatEntity(ClimateEntity):
             preset_mode: The desired preset mode:
                 - PRESET_AWAY: Sets the thermostat to away mode
                 - PRESET_NONE: Returns to normal operation mode
+
         """
         self._attr_preset_mode = preset_mode
         if preset_mode == PRESET_AWAY:

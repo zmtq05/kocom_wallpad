@@ -79,22 +79,21 @@ class Hub:
 
     async def connect(self) -> None:
         """Establish connection to the EW11 network interface."""
-        while self._should_reconnect and self._reconnect_attempt_count < self._max_reconnect_attempts:
+        while (
+            self._should_reconnect
+            and self._reconnect_attempt_count < self._max_reconnect_attempts
+        ):
             try:
                 self._reader, self._writer = await asyncio.open_connection(
                     host=self._host, port=self._port
                 )
-                _LOGGER.info(
-                    "Connected to EW11 at %s:%d",
-                    self._host,
-                    self._port
-                )
+                _LOGGER.info("Connected to EW11 at %s:%d", self._host, self._port)
                 _LOGGER.debug(
                     "Initialized devices - Lights: %s, Thermostats: %s, Fan: %s, Gas: %s",
                     list(self.light_controllers.keys()),
                     list(self.thermostats.keys()),
                     "Enabled" if self.fan else "Disabled",
-                    "Enabled" if self.gas_valve else "Disabled"
+                    "Enabled" if self.gas_valve else "Disabled",
                 )
                 # 연결 성공시 재연결 태스크 취소
                 if self._reconnect_task:
@@ -106,7 +105,7 @@ class Hub:
                     "Failed to connect to EW11 at %s:%d - %s",
                     self._host,
                     self._port,
-                    err
+                    err,
                 )
                 if not self._reconnect_task:
                     raise ConfigEntryNotReady from err
@@ -141,7 +140,7 @@ class Hub:
             self._host,
             self._port,
             self._reconnect_attempt_count + 1,
-            self._max_reconnect_attempts
+            self._max_reconnect_attempts,
         )
 
         async def reconnect():
@@ -151,14 +150,10 @@ class Hub:
                     await self.connect()
                     # 연결 성공시 read/send 루프 재시작
                     self._entry.async_create_background_task(
-                        self._hass,
-                        self.read_loop(),
-                        "read_loop"
+                        self._hass, self.read_loop(), "read_loop"
                     )
                     self._entry.async_create_background_task(
-                        self._hass,
-                        self.send_loop(),
-                        "send_loop"
+                        self._hass, self.send_loop(), "send_loop"
                     )
                     # 연결 성공시 카운터 초기화
                     self._reconnect_attempt_count = 0
@@ -170,22 +165,20 @@ class Hub:
                         self._max_reconnect_attempts,
                         self._host,
                         self._port,
-                        err
+                        err,
                     )
                     if self._reconnect_attempt_count >= self._max_reconnect_attempts:
                         _LOGGER.error(
                             "Max reconnection attempts reached for %s:%d. Manual intervention required.",
                             self._host,
-                            self._port
+                            self._port,
                         )
                         self._should_reconnect = False
                         break
                     await asyncio.sleep(self._reconnect_interval)
 
         self._reconnect_task = self._entry.async_create_background_task(
-            self._hass,
-            reconnect(),
-            "reconnect"
+            self._hass, reconnect(), "reconnect"
         )
 
     async def read_loop(self) -> None:
@@ -197,9 +190,7 @@ class Hub:
 
                 if not data:
                     _LOGGER.warning(
-                        "Connection closed by EW11 at %s:%d",
-                        self._host,
-                        self._port
+                        "Connection closed by EW11 at %s:%d", self._host, self._port
                     )
                     # 연결이 끊어진 경우 재연결 시작
                     await self._start_reconnect()
@@ -211,14 +202,14 @@ class Hub:
                         "Received packet from %s:%d - %s",
                         self._host,
                         self._port,
-                        packet
+                        packet,
                     )
                 except AssertionError:
                     _LOGGER.warning(
                         "Invalid packet received from %s:%d - %s",
                         self._host,
                         self._port,
-                        data.hex(" ").upper()
+                        data.hex(" ").upper(),
                     )
                     continue
 
@@ -232,8 +223,7 @@ class Hub:
                             await self.light_controllers[room]._handle_packet(packet)
                         else:
                             _LOGGER.warning(
-                                "Received packet for unconfigured light room %d",
-                                room
+                                "Received packet for unconfigured light room %d", room
                             )
                     case (Device.Thermostat, room):
                         if room in self.thermostats:
@@ -241,7 +231,7 @@ class Hub:
                         else:
                             _LOGGER.warning(
                                 "Received packet for unconfigured thermostat room %d",
-                                room
+                                room,
                             )
                     case (Device.Fan, _):
                         if self.fan:
@@ -252,16 +242,20 @@ class Hub:
                         if self.gas_valve:
                             await self.gas_valve._handle_packet(packet)
                         else:
-                            _LOGGER.warning("Received gas valve packet but gas valve is disabled")
+                            _LOGGER.warning(
+                                "Received gas valve packet but gas valve is disabled"
+                            )
                     case _:
-                        _LOGGER.warning("Received packet for unknown device: %s", packet)
+                        _LOGGER.warning(
+                            "Received packet for unknown device: %s", packet
+                        )
             except Exception as err:
                 _LOGGER.error(
                     "Error in read loop for %s:%d - %s",
                     self._host,
                     self._port,
                     err,
-                    exc_info=True
+                    exc_info=True,
                 )
                 # 오류 발생시 재연결 시작
                 await self._start_reconnect()
@@ -276,10 +270,7 @@ class Hub:
             try:
                 packet = await self._send_queue.get()
                 _LOGGER.debug(
-                    "Sending packet to %s:%d - %s",
-                    self._host,
-                    self._port,
-                    packet
+                    "Sending packet to %s:%d - %s", self._host, self._port, packet
                 )
                 self._writer.write(packet)
                 await self._writer.drain()
@@ -291,7 +282,7 @@ class Hub:
                     self._host,
                     self._port,
                     err,
-                    exc_info=True
+                    exc_info=True,
                 )
                 # 오류 발생시 재연결 시작
                 await self._start_reconnect()
@@ -392,6 +383,7 @@ class LightController(_HubChild):
         This method implements a small delay to allow multiple rapid changes
         to be combined into a single packet, improving efficiency.
         """
+
         async def task():
             await asyncio.sleep(0.2)
             await self._hub.send(

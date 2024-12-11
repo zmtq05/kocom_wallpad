@@ -26,13 +26,13 @@ async def async_setup_entry(
         hass: The Home Assistant instance.
         entry: The config entry being setup.
         async_add_entities: Callback to add new entities to Home Assistant.
+
     """
     hub: Hub = hass.data[DOMAIN][entry.entry_id]
     for controller in hub.light_controllers.values():
         await controller.refresh()
         async_add_entities(
-            [KocomLightEntity(controller, n)
-             for n in range(controller.size)]
+            [KocomLightEntity(controller, n) for n in range(controller.size)]
         )
 
 
@@ -66,6 +66,7 @@ class KocomLightEntity(LightEntity):
         Args:
             controller: The light controller instance that manages this light.
             n: The index number of this light within its room/controller.
+
         """
         self.n = n
         self.controller = controller
@@ -78,6 +79,7 @@ class KocomLightEntity(LightEntity):
 
         Returns:
             bool: True if the light is on, False otherwise.
+
         """
         return self.controller.is_on(self.n)
 
