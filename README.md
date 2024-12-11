@@ -6,8 +6,18 @@
 
 코콤 월패드를 홈 어시스턴트에서 사용할 수 있도록 하는 통합구성요소입니다.
 
-> [!WARNING]
-> 이 통합구성요소는 소켓(EW11) 연결방식만 지원합니다.
+두 개의 소켓을 사용할 경우에 유용합니다.
+
+> [!IMPORTANT]
+> 이 통합구성요소는 소켓(EW11) 연결만 지원합니다.
+
+> [!NOTE]
+> 시리얼 연결 방식이 필요한 경우 다음의 add-on 중 하나를 사용하세요.
+> - [vifrost/kocom.py](https://github.com/vifrost/kocom.py)
+> - [kyet/kocom.py](https://github.com/kyet/kocom.py)
+> - [clipman/kocom.py](https://github.com/clipman/kocom.py)
+> - [HAKorea/addons/kocomRS485](https://github.com/HAKorea/addons/tree/master/kocomRS485)
+> - 기타 등등
 
 ## 설치 방법
 
@@ -25,6 +35,7 @@
 - 난방
     - on / off / away
     - 목표 온도 설정 / 현재 온도 표시
+    - 난방조절기의 상태를 주기적으로 확인(선택사항)
 - 가스밸브
     - 닫기
 - 환기(전열교환기)
