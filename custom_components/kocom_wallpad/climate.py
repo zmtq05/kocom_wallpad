@@ -23,10 +23,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .util import typed_data
 from .hub import Hub, Thermostat
-from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN
+from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN, NAME, VERSION, DEVICE_ID
 
 
 async def async_setup_entry(
