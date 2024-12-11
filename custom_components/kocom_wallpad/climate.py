@@ -1,4 +1,13 @@
-"""Kocom Wallpad thermostat entity."""
+"""Kocom Wallpad Climate Integration for Home Assistant.
+
+This module implements support for Kocom Wallpad thermostats, providing heating control
+and temperature monitoring capabilities through Home Assistant's climate platform.
+Features include:
+- Temperature monitoring and control
+- Multiple operation modes (Heat, Off)
+- Away mode support
+- Periodic status polling
+"""
 
 import asyncio
 from typing import Any
@@ -16,20 +25,31 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import UnitOfTemperature
 
 from .util import typed_data
-
 from .hub import Hub, Thermostat
 from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
-):
-    """Set up the Kocom Wallpad climate entity."""
+) -> None:
+    """Set up Kocom Wallpad climate entities from a config entry.
 
+    Initializes thermostat entities and sets up periodic polling if configured.
+
+    Args:
+        hass: The Home Assistant instance.
+        entry: The config entry being setup.
+        async_add_entities: Callback to add new entities to Home Assistant.
+    """
     data = typed_data(entry)
     interval = data.get(CONF_THERMO_POLL_INTERVAL, 60)
 
     async def polling(hub: Hub):
+        """Periodically poll thermostats for status updates.
+
+        Args:
+            hub: The Hub instance containing the thermostats to poll.
+        """
         while True:
             # refresh thermostats every 60 seconds
             # no packets when controlling the target temperature
@@ -48,7 +68,12 @@ async def async_setup_entry(
 
 
 class KocomThermostatEntity(ClimateEntity):
-    """Kocom thermostat entity."""
+    """Representation of a Kocom Thermostat Entity.
+
+    This entity represents a single room's thermostat in the Kocom Wallpad system.
+    It supports temperature control, heating modes, and away mode functionality.
+    Temperature is controlled in Celsius with 1-degree steps.
+    """
 
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
@@ -60,7 +85,12 @@ class KocomThermostatEntity(ClimateEntity):
     _attr_preset_mode = PRESET_NONE
 
     def __init__(self, room: int, thermostat: Thermostat) -> None:
-        """Initialize the Kocom thermostat entity."""
+        """Initialize a new Kocom thermostat entity.
+
+        Args:
+            room: The room number this thermostat controls.
+            thermostat: The thermostat controller instance.
+        """
         self.room = room
         self.thermostat = thermostat
         self._attr_unique_id = f"thermostat_{room}"
@@ -68,17 +98,29 @@ class KocomThermostatEntity(ClimateEntity):
 
     @property
     def current_temperature(self) -> float:
-        """Return the current temperature."""
+        """Get the current room temperature.
+
+        Returns:
+            float: The current temperature in degrees Celsius.
+        """
         return self.thermostat.current_temp
 
     @property
     def target_temperature(self) -> float:
-        """Return the target temperature."""
+        """Get the target temperature setting.
+
+        Returns:
+            float: The target temperature in degrees Celsius.
+        """
         return self.thermostat.target_temp
 
     @property
     def hvac_mode(self) -> HVACMode:
-        """Return the current hvac mode."""
+        """Get the current HVAC operation mode.
+
+        Returns:
+            HVACMode: HEAT if the thermostat is on, OFF otherwise.
+        """
         if self.thermostat.is_on:
             return HVACMode.HEAT
         else:
@@ -86,7 +128,14 @@ class KocomThermostatEntity(ClimateEntity):
 
     @property
     def hvac_action(self) -> HVACAction:
-        """Return the current hvac action."""
+        """Get the current HVAC action status.
+
+        Returns:
+            HVACAction: The current action:
+                - OFF if the thermostat is off
+                - HEATING if the current temperature is below target
+                - IDLE if the target temperature is reached
+        """
         if not self.thermostat.is_on:
             return HVACAction.OFF
         if self.thermostat.current_temp < self.thermostat.target_temp:
@@ -95,7 +144,11 @@ class KocomThermostatEntity(ClimateEntity):
             return HVACAction.IDLE
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set the hvac mode."""
+        """Set the HVAC operation mode.
+
+        Args:
+            hvac_mode: The desired operation mode (HEAT or OFF).
+        """
         match hvac_mode:
             case HVACMode.HEAT:
                 await self.thermostat.on()
@@ -103,16 +156,26 @@ class KocomThermostatEntity(ClimateEntity):
                 await self.thermostat.off()
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set the target temperature."""
+        """Set the target temperature.
+
+        Args:
+            **kwargs: Must contain 'temperature' key with the desired
+                     temperature in degrees Celsius.
+        """
         temp = int(kwargs["temperature"])
         await self.thermostat.set_temp(temp)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
-        """Set the preset mode."""
+        """Set the preset mode of operation.
+
+        Args:
+            preset_mode: The desired preset mode:
+                - PRESET_AWAY: Sets the thermostat to away mode
+                - PRESET_NONE: Returns to normal operation mode
+        """
         self._attr_preset_mode = preset_mode
         if preset_mode == PRESET_AWAY:
             await self.thermostat.away()
-
         elif preset_mode == PRESET_NONE:
             if self.thermostat.is_on:
                 await self.thermostat.on()
@@ -120,10 +183,17 @@ class KocomThermostatEntity(ClimateEntity):
                 await self.thermostat.off()
 
     async def async_added_to_hass(self) -> None:
-        """Register the callback."""
+        """Handle when entity is added to Home Assistant.
+
+        Performs initial state refresh and sets up state update callback
+        when the entity is added to Home Assistant.
+        """
         await self.thermostat.refresh()
         self.thermostat.register_callback(self.async_write_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:
-        """Remove the callback."""
+        """Handle when entity is being removed from Home Assistant.
+
+        Cleans up by removing the state update callback when the entity is removed.
+        """
         self.thermostat.remove_callback(self.async_write_ha_state)
