@@ -19,6 +19,7 @@ from collections.abc import Callable
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO
 from .kocom_packet import KocomPacket, PacketType, Device, Command
@@ -41,6 +42,7 @@ class Hub:
         Args:
             hass: The Home Assistant instance.
             entry: The config entry containing connection and device settings.
+
         """
         data = typed_data(entry)
         self._entry = entry
@@ -71,74 +73,143 @@ class Hub:
 
     async def connect(self) -> None:
         """Establish connection to the EW11 network interface."""
-        self._reader, self._writer = await asyncio.open_connection(
-            host=self._host, port=self._port
-        )
-        _LOGGER.info("Connected to %s", self._host)
+        try:
+            self._reader, self._writer = await asyncio.open_connection(
+                host=self._host, port=self._port
+            )
+            _LOGGER.info(
+                "Connected to EW11 at %s:%d",
+                self._host,
+                self._port
+            )
+            _LOGGER.debug(
+                "Initialized devices - Lights: %s, Thermostats: %s, Fan: %s, Gas: %s",
+                list(self.light_controllers.keys()),
+                list(self.thermostats.keys()),
+                "Enabled" if self.fan else "Disabled",
+                "Enabled" if self.gas_valve else "Disabled"
+            )
+        except OSError as err:
+            _LOGGER.error(
+                "Failed to connect to EW11 at %s:%d - %s",
+                self._host,
+                self._port,
+                err
+            )
+            raise ConfigEntryNotReady from err
 
     async def disconnect(self) -> None:
         """Close the connection to the EW11 network interface."""
         if self._writer:
-            self._writer.close()
-            await self._writer.wait_closed()
-            self._reader, self._writer = None, None
-            _LOGGER.info("Disconneted from %s", self._host)
+            try:
+                self._writer.close()
+                await self._writer.wait_closed()
+            except Exception as err:
+                _LOGGER.error("Error closing connection: %s", err)
+            finally:
+                self._reader, self._writer = None, None
+                _LOGGER.info("Disconnected from %s", self._host)
 
     async def read_loop(self) -> None:
-        """Continuously listen for and process incoming packets.
-
-        This coroutine runs indefinitely, reading packets from the network connection
-        and dispatching them to the appropriate device controllers.
-        """
-        _LOGGER.debug("Read loop started")
+        """Continuously listen for and process incoming packets."""
+        _LOGGER.debug("Read loop started for %s:%d", self._host, self._port)
         while self._reader is not None:
-            data = await self._reader.read(21)
-
-            if not data:
-                break
-
             try:
-                packet = KocomPacket(data)
-                _LOGGER.debug("<-(%s) %s", self._host, packet)
-            except AssertionError:
-                _LOGGER.warning("Invalid packet: %s", data.hex(" ").upper())
-                continue
+                data = await self._reader.read(21)
 
-            if packet.type == PacketType.Ack:
-                # ignore
-                continue
+                if not data:
+                    _LOGGER.warning(
+                        "Connection closed by EW11 at %s:%d",
+                        self._host,
+                        self._port
+                    )
+                    break
 
-            match packet.src:
-                case (Device.Light, room):
-                    await self.light_controllers[room]._handle_packet(packet)
-                case (Device.Thermostat, room):
-                    await self.thermostats[room]._handle_packet(packet)
-                case (Device.Fan, _):
-                    if self.fan:
-                        await self.fan._handle_packet(packet)
-                case (Device.GasValve, _):
-                    if self.gas_valve:
-                        await self.gas_valve._handle_packet(packet)
-                case _:
-                    pass
-        _LOGGER.debug("Read loop finished")
+                try:
+                    packet = KocomPacket(data)
+                    _LOGGER.debug(
+                        "Received packet from %s:%d - %s",
+                        self._host,
+                        self._port,
+                        packet
+                    )
+                except AssertionError:
+                    _LOGGER.warning(
+                        "Invalid packet received from %s:%d - %s",
+                        self._host,
+                        self._port,
+                        data.hex(" ").upper()
+                    )
+                    continue
+
+                if packet.type == PacketType.Ack:
+                    _LOGGER.debug("Received ACK packet - ignoring")
+                    continue
+
+                match packet.src:
+                    case (Device.Light, room):
+                        if room in self.light_controllers:
+                            await self.light_controllers[room]._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received packet for unconfigured light room %d",
+                                room
+                            )
+                    case (Device.Thermostat, room):
+                        if room in self.thermostats:
+                            await self.thermostats[room]._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received packet for unconfigured thermostat room %d",
+                                room
+                            )
+                    case (Device.Fan, _):
+                        if self.fan:
+                            await self.fan._handle_packet(packet)
+                        else:
+                            _LOGGER.warning("Received fan packet but fan is disabled")
+                    case (Device.GasValve, _):
+                        if self.gas_valve:
+                            await self.gas_valve._handle_packet(packet)
+                        else:
+                            _LOGGER.warning("Received gas valve packet but gas valve is disabled")
+                    case _:
+                        _LOGGER.warning("Received packet for unknown device: %s", packet)
+            except Exception as err:
+                _LOGGER.error(
+                    "Error in read loop for %s:%d - %s",
+                    self._host,
+                    self._port,
+                    err,
+                    exc_info=True
+                )
+        _LOGGER.debug("Read loop finished for %s:%d", self._host, self._port)
 
     async def send_loop(self) -> None:
-        """Continuously process and send outgoing packets.
-
-        This coroutine runs indefinitely, taking packets from the send queue
-        and transmitting them to the EW11 interface. It includes a delay between
-        packets to prevent collisions.
-        """
-        _LOGGER.debug("Send loop started")
+        """Continuously process and send outgoing packets."""
+        _LOGGER.debug("Send loop started for %s:%d", self._host, self._port)
         while self._writer is not None:
-            packet = await self._send_queue.get()
-            _LOGGER.debug("->(%s) %s", self._host, packet)
-            self._writer.write(packet)
-            await self._writer.drain()
-            await asyncio.sleep(1)  # prevent packet collision
-            self._send_queue.task_done()
-        _LOGGER.debug("Send loop finished")
+            try:
+                packet = await self._send_queue.get()
+                _LOGGER.debug(
+                    "Sending packet to %s:%d - %s",
+                    self._host,
+                    self._port,
+                    packet
+                )
+                self._writer.write(packet)
+                await self._writer.drain()
+                await asyncio.sleep(1)  # prevent packet collision
+                self._send_queue.task_done()
+            except Exception as err:
+                _LOGGER.error(
+                    "Error in send loop for %s:%d - %s",
+                    self._host,
+                    self._port,
+                    err,
+                    exc_info=True
+                )
+        _LOGGER.debug("Send loop finished for %s:%d", self._host, self._port)
 
     async def send(
         self,
@@ -152,6 +223,7 @@ class Hub:
             dst: The target device or (device, room) tuple.
             command: The command to send.
             value: The command parameters (defaults to all zeros).
+
         """
         await self._send_queue.put(KocomPacket.create(dst, command, value))
 
@@ -169,6 +241,7 @@ class _HubChild:
         Args:
             hub: The Hub instance this device belongs to.
             device: The device type or (device, room) tuple this controller manages.
+
         """
         self._hub = hub
         self._device = device
@@ -179,6 +252,7 @@ class _HubChild:
 
         Args:
             callback: The callback function to be called when device state changes.
+
         """
         self._callbacks.add(callback)
 
@@ -187,6 +261,7 @@ class _HubChild:
 
         Args:
             callback: The callback function to remove.
+
         """
         self._callbacks.discard(callback)
 
@@ -214,6 +289,7 @@ class LightController(_HubChild):
             hub: The Hub instance this controller belongs to.
             room: The room number this controller manages.
             light_size: The number of lights in this room.
+
         """
         super().__init__(hub, (Device.Light, room))
         self.room: int = room
@@ -246,6 +322,7 @@ class LightController(_HubChild):
 
         Args:
             n: The index of the light to turn on.
+
         """
         self._state[n] = 0xFF
         await self._set()
@@ -255,6 +332,7 @@ class LightController(_HubChild):
 
         Args:
             n: The index of the light to turn off.
+
         """
         self._state[n] = 0x00
         await self._set()
@@ -267,6 +345,7 @@ class LightController(_HubChild):
 
         Returns:
             bool: True if the light is on, False otherwise.
+
         """
         return self._state[light] == 0xFF
 
@@ -277,6 +356,7 @@ class LightController(_HubChild):
 
         Args:
             packet: The received packet containing light states.
+
         """
         self._state = packet.value
         state_str = ", ".join(
@@ -301,6 +381,7 @@ class Thermostat(_HubChild):
         Args:
             ew11: The Hub instance this controller belongs to.
             room: The room number this controller manages.
+
         """
         super().__init__(ew11, (Device.Thermostat, room))
         # 0+1 - mode; on: 11 00 / off: 01 00 / away: 11 01
@@ -315,6 +396,7 @@ class Thermostat(_HubChild):
 
         Returns:
             bool: True if the thermostat is on, False if off.
+
         """
         return self._state[0] == 0x11
 
@@ -324,6 +406,7 @@ class Thermostat(_HubChild):
 
         Returns:
             bool: True if in away mode, False otherwise.
+
         """
         return self._state[1] == 0x01
 
@@ -333,6 +416,7 @@ class Thermostat(_HubChild):
 
         Returns:
             int: The target temperature in degrees Celsius.
+
         """
         return self._state[2]
 
@@ -342,6 +426,7 @@ class Thermostat(_HubChild):
 
         Returns:
             int: The current temperature in degrees Celsius.
+
         """
         return self._state[4]
 
@@ -350,6 +435,7 @@ class Thermostat(_HubChild):
 
         Args:
             target_temp: The desired temperature in degrees Celsius.
+
         """
         self._state[2] = target_temp
         await self._send()
@@ -387,6 +473,7 @@ class Thermostat(_HubChild):
 
         Args:
             packet: The received packet containing thermostat state.
+
         """
         self._state = packet.value
 
@@ -412,6 +499,7 @@ class Fan(_HubChild):
 
         Args:
             ew11: The Hub instance this controller belongs to.
+
         """
         super().__init__(ew11, Device.Fan)
         # 0 - mode; on: 11 / off: 00
@@ -429,6 +517,7 @@ class Fan(_HubChild):
 
         Returns:
             bool: True if the fan is on, False if off.
+
         """
         return self._state[0] == 0x11
 
@@ -438,6 +527,7 @@ class Fan(_HubChild):
 
         Returns:
             int: The current speed level (0-3).
+
         """
         return self._state[2] // 0x40
 
@@ -446,6 +536,7 @@ class Fan(_HubChild):
 
         Args:
             step: The desired speed level (0-3, where 0 is off).
+
         """
         if step == 0:
             self._state[0] = 0x00
@@ -461,6 +552,7 @@ class Fan(_HubChild):
 
         Args:
             packet: The received packet containing fan state.
+
         """
         self._state = packet.value
         _LOGGER.info("Fan { on: %s, step: %s }", self.is_on, self.step)
@@ -479,6 +571,7 @@ class GasValve(_HubChild):
 
         Args:
             ew11: The Hub instance this controller belongs to.
+
         """
         super().__init__(ew11, Device.GasValve)
         self.is_locked = False
@@ -494,6 +587,7 @@ class GasValve(_HubChild):
 
         Args:
             packet: The received packet containing valve state.
+
         """
         match packet.cmd:
             case Command.Lock:
