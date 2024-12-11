@@ -12,8 +12,9 @@ from homeassistant.components.valve import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
 from .hub import Hub, GasValve
-from .const import DOMAIN
+from .const import DOMAIN, NAME, VERSION, DEVICE_ID
 
 
 async def async_setup_entry(
@@ -42,6 +43,14 @@ class KocomGasValveEntity(ValveEntity):
     _attr_device_class = ValveDeviceClass.GAS
     _attr_supported_features = ValveEntityFeature.CLOSE
     _attr_reports_position = False
+    _attr_has_entity_name = True
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, DEVICE_ID)},
+        name=NAME,
+        manufacturer="KOCOM",
+        model="월패드",
+        sw_version=VERSION,
+    )
 
     def __init__(self, gas_valve: GasValve) -> None:
         """Initialize a new Kocom gas valve entity.

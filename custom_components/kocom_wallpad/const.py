@@ -4,6 +4,8 @@ NAME = "Kocom 월패드"
 DOMAIN = "kocom_wallpad"
 VERSION = "0.1.0"
 
+DEVICE_ID = "kocom_wallpad"  # 모든 엔티티가 공유할 디바이스 식별자
+
 CONF_TARGET = "target"
 CONF_LIGHT = "light"
 CONF_THERMO = "thermostat"

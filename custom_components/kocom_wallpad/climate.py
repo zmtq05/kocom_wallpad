@@ -23,10 +23,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .util import typed_data
 from .hub import Hub, Thermostat
-from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN
+from .const import CONF_THERMO_POLL_INTERVAL, DOMAIN, NAME, VERSION, DEVICE_ID
 
 
 async def async_setup_entry(
@@ -83,6 +84,14 @@ class KocomThermostatEntity(ClimateEntity):
     )
     _attr_preset_modes = [PRESET_NONE, PRESET_AWAY]
     _attr_preset_mode = PRESET_NONE
+    _attr_has_entity_name = True
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, DEVICE_ID)},
+        name=NAME,
+        manufacturer="KOCOM",
+        model="월패드",
+        sw_version=VERSION,
+    )
 
     def __init__(self, room: int, thermostat: Thermostat) -> None:
         """Initialize a new Kocom thermostat entity.

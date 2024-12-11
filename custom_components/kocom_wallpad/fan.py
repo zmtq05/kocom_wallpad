@@ -9,13 +9,14 @@ from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.util.percentage import (
     ordered_list_item_to_percentage,
     percentage_to_ordered_list_item,
 )
 
 from .hub import Hub, Fan
-from .const import DOMAIN
+from .const import DOMAIN, NAME, VERSION, DEVICE_ID
 
 
 async def async_setup_entry(
@@ -46,6 +47,14 @@ class KocomFanEntity(FanEntity):
 
     _attr_supported_features = FanEntityFeature.SET_SPEED
     _attr_speed_count = len(ORDERED_NAMED_FAN_SPEEDS)
+    _attr_has_entity_name = True
+    _attr_device_info = DeviceInfo(
+        identifiers={(DOMAIN, DEVICE_ID)},
+        name=NAME,
+        manufacturer="KOCOM",
+        model="월패드",
+        sw_version=VERSION,
+    )
 
     def __init__(self, fan: Fan) -> None:
         """Initialize a new Kocom fan entity.
