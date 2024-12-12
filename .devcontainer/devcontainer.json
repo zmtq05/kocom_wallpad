@@ -1,7 +1,7 @@
 {
     "name": "zmtq05/kocom_wallpad",
     "image": "mcr.microsoft.com/devcontainers/python:3.12",
-    "postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && scripts/setup",
+    "postCreateCommand": "scripts/setup",
     "forwardPorts": [
         8123
     ],
