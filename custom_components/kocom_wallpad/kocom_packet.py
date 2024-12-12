@@ -23,6 +23,7 @@ class Device(IntEnum):
     GasValve = 0x2C
     Fan = 0x48
     Elevator = 0x44
+    Outlet = 0x3B
 
 
 class Command(IntEnum):

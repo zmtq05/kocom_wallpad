@@ -21,7 +21,15 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_ELEVATOR, CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO, EVENT_ELEVATOR_ARRIVAL
+from .const import (
+    CONF_ELEVATOR,
+    CONF_FAN,
+    CONF_GAS,
+    CONF_LIGHT,
+    CONF_OUTLET,
+    CONF_THERMO,
+    EVENT_ELEVATOR_ARRIVAL,
+)
 from .kocom_packet import KocomPacket, PacketType, Device, Command
 from .util import typed_data
 
@@ -55,6 +63,11 @@ class Hub:
         self.light_controllers: dict[int, LightController] = {
             int(room): LightController(self, int(room), light_size)
             for room, light_size in data[CONF_LIGHT].items()
+        }
+
+        self.outlet_controllers: dict[int, OutletController] = {
+            int(room): OutletController(self, int(room), outlet_size)
+            for room, outlet_size in data[CONF_OUTLET].items()
         }
 
         self.thermostats: dict[int, Thermostat] = {
@@ -92,8 +105,7 @@ class Hub:
                 self._reader, self._writer = await asyncio.open_connection(
                     host=self._host, port=self._port
                 )
-                _LOGGER.info("Connected to EW11 at %s:%d",
-                             self._host, self._port)
+                _LOGGER.info("Connected to EW11 at %s:%d", self._host, self._port)
                 _LOGGER.debug(
                     "Initialized devices - Lights: %s, Thermostats: %s, Fan: %s, Gas: %s, Elevator: %s",
                     list(self.light_controllers.keys()),
@@ -244,8 +256,7 @@ class Hub:
                         if self.fan:
                             await self.fan._handle_packet(packet)
                         else:
-                            _LOGGER.warning(
-                                "Received fan packet but fan is disabled")
+                            _LOGGER.warning("Received fan packet but fan is disabled")
                     case (Device.GasValve, _):
                         if self.gas_valve:
                             await self.gas_valve._handle_packet(packet)
@@ -742,3 +753,97 @@ class Elevator(_HubChild):
     def register_event_handler(self, callback: Callable[[str], None]) -> None:
         """Register an event handler for elevator arrival."""
         self._event_handler = callback
+
+
+class OutletController(_HubChild):
+    """Controller for Kocom outlet devices.
+
+    Manages multiple outlets within a room, supporting individual on/off control
+    and batch operations for efficiency.
+    """
+
+    def __init__(self, hub: Hub, room: int, outlet_size: int) -> None:
+        """Initialize a outlet controller for a specific room.
+
+        Args:
+            hub: The Hub instance this controller belongs to.
+            room: The room number this controller manages.
+            outlet_size: The number of outlets in this room.
+
+        """
+        super().__init__(hub, (Device.Outlet, room))
+        self.room: int = room
+        self.size: int = outlet_size
+        # 0~7 - outlet; on: FF / off: 00
+        self._state: list[int] = [0, 0, 0, 0, 0, 0, 0, 0]
+        self._task = None
+
+    async def _set(self) -> None:
+        """Queue a batch update for outlet states.
+
+        This method implements a small delay to allow multiple rapid changes
+        to be combined into a single packet, improving efficiency.
+        """
+
+        async def task():
+            await asyncio.sleep(0.2)
+            await self._hub.send(
+                self._device,
+                Command.Set,
+                self._state,
+            )
+
+        if not self._task:
+            self._task = self._hub._entry.async_create_task(
+                self._hub._hass, task(), "set"
+            )
+
+    async def turn_on(self, n: int) -> None:
+        """Turn on a specific outlet.
+
+        Args:
+            n: The index of the outlet to turn on.
+
+        """
+        self._state[n] = 0xFF
+        await self._set()
+
+    async def turn_off(self, n: int) -> None:
+        """Turn off a specific outlet.
+
+        Args:
+            n: The index of the outlet to turn off.
+
+        """
+        self._state[n] = 0x00
+        await self._set()
+
+    def is_on(self, outlet: int) -> bool:
+        """Check if a specific outlet is on.
+
+        Args:
+            outlet: The index of the outlet to check.
+
+        Returns:
+            bool: True if the outlet is on, False otherwise.
+
+        """
+        return self._state[outlet] == 0xFF
+
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        """Process an incoming packet from the device.
+
+        Updates the internal state and notifies Home Assistant of any changes.
+
+        Args:
+            packet: The received packet containing light states.
+
+        """
+        self._state = packet.value
+        state_str = ", ".join(
+            f"{i+1}: on" if x == 0xFF else f"{i+1}: off"
+            for i, x in enumerate(self._state[: self.size])
+        )
+        _LOGGER.info("Outlet: { room: %s, %s }", self.room, state_str)
+        await self.write_ha_state()
+        self._task = None
