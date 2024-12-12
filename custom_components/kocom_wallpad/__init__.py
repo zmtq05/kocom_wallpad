@@ -12,6 +12,8 @@ PLATFORMS: list[Platform] = [
     Platform.CLIMATE,
     Platform.FAN,
     Platform.VALVE,
+    Platform.EVENT,
+    Platform.BUTTON,
 ]
 
 

@@ -13,3 +13,5 @@ CONF_THERMO_POLL_INTERVAL = "thermostat_poll_interval"
 CONF_FAN = "fan"
 CONF_GAS = "gas"
 CONF_ELEVATOR = "elevator"
+
+EVENT_ELEVATOR_ARRIVAL = "elevator_arrival"

@@ -32,6 +32,7 @@ class Command(IntEnum):
     Set = 0x00
     Lock = 0x02  # Gas valve only
     Unlock = 0x01  # Gas valve only
+    Elevator = 0x01
 
 
 class KocomPacket(bytes):
@@ -50,6 +51,26 @@ class KocomPacket(bytes):
 
         type = (0x30, PacketType.Seq)
         src = (Device.Wallpad, 0x00)
+
+        body = [*type, 0x00, *dst, *src, cmd, *value]
+        checksum = sum(body) % 256
+        body.append(checksum)
+        return cls(bytes(_HEADER + body + _FOOTER))
+
+    @classmethod
+    def create_rare(
+        cls,
+        type: tuple[int, int],
+        dst: tuple[Device, int] | Device,
+        src: tuple[Device, int] | Device,
+        cmd: Command,
+        value: list[int] = [0, 0, 0, 0, 0, 0, 0, 0],
+    ) -> Self:
+        """Create a rare packet."""
+        if isinstance(dst, Device):
+            dst = (dst, 0x00)
+        if isinstance(src, Device):
+            src = (src, 0x00)
 
         body = [*type, 0x00, *dst, *src, cmd, *value]
         checksum = sum(body) % 256

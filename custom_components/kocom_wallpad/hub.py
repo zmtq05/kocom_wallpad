@@ -21,7 +21,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO
+from .const import CONF_ELEVATOR, CONF_FAN, CONF_GAS, CONF_LIGHT, CONF_THERMO, EVENT_ELEVATOR_ARRIVAL
 from .kocom_packet import KocomPacket, PacketType, Device, Command
 from .util import typed_data
 
@@ -71,6 +71,11 @@ class Hub:
         else:
             self.gas_valve = None
 
+        if data[CONF_ELEVATOR]:
+            self.elevator = Elevator(self)
+        else:
+            self.elevator = None
+
         self._reconnect_task = None
         self._reconnect_interval = 30  # 재연결 시도 간격(초)
         self._should_reconnect = True  # 재연결 시도 여부
@@ -87,13 +92,15 @@ class Hub:
                 self._reader, self._writer = await asyncio.open_connection(
                     host=self._host, port=self._port
                 )
-                _LOGGER.info("Connected to EW11 at %s:%d", self._host, self._port)
+                _LOGGER.info("Connected to EW11 at %s:%d",
+                             self._host, self._port)
                 _LOGGER.debug(
-                    "Initialized devices - Lights: %s, Thermostats: %s, Fan: %s, Gas: %s",
+                    "Initialized devices - Lights: %s, Thermostats: %s, Fan: %s, Gas: %s, Elevator: %s",
                     list(self.light_controllers.keys()),
                     list(self.thermostats.keys()),
                     "Enabled" if self.fan else "Disabled",
                     "Enabled" if self.gas_valve else "Disabled",
+                    "Enabled" if self.elevator else "Disabled",
                 )
                 # 연결 성공시 재연결 태스크 취소
                 if self._reconnect_task:
@@ -237,13 +244,21 @@ class Hub:
                         if self.fan:
                             await self.fan._handle_packet(packet)
                         else:
-                            _LOGGER.warning("Received fan packet but fan is disabled")
+                            _LOGGER.warning(
+                                "Received fan packet but fan is disabled")
                     case (Device.GasValve, _):
                         if self.gas_valve:
                             await self.gas_valve._handle_packet(packet)
                         else:
                             _LOGGER.warning(
                                 "Received gas valve packet but gas valve is disabled"
+                            )
+                    case (Device.Wallpad, _):
+                        if packet.dst[0] == Device.Elevator and self.elevator:
+                            await self.elevator._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received elevator packet but elevator is disabled"
                             )
                     case _:
                         _LOGGER.warning(
@@ -305,6 +320,15 @@ class Hub:
 
         """
         await self._send_queue.put(KocomPacket.create(dst, command, value))
+
+    async def send_packet(self, packet: KocomPacket) -> None:
+        """Send a packet to the device.
+
+        Args:
+            packet: The packet to send.
+
+        """
+        await self._send_queue.put(packet)
 
 
 class _HubChild:
@@ -676,3 +700,45 @@ class GasValve(_HubChild):
                 self.is_locked = False
         _LOGGER.info("GasValve { locked: %s }", self.is_locked)
         await self.write_ha_state()
+
+
+class Elevator(_HubChild):
+    """Controller for calling elevator and checking if it arrived."""
+
+    def __init__(self, hub: Hub) -> None:
+        """Initialize the elevator controller.
+
+        Args:
+            hub: The Hub instance this controller belongs to.
+
+        """
+        super().__init__(hub, Device.Wallpad)  # 월패드에서 엘리베이터로 패킷을 보냄
+        self._event_handler = None
+
+    async def call(self) -> None:
+        """Call the elevator."""
+
+        # 엘리베이터 호출 패킷: AA 55 30 BC 00 01 00 44 00 01 00 00 00 00 00 00 00 00 32 0D 0D
+        packet = KocomPacket.create_rare(
+            (0x30, PacketType.Seq),
+            self._device,
+            Device.Elevator,
+            Command.Elevator,
+        )
+        await self._hub.send_packet(packet)
+
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        """Process an incoming packet from the device.
+
+        Updates the internal state and notifies Home Assistant of any changes.
+        """
+
+        # 엘리베이터 도착 패킷: AA 55 30 BC 00 44 00 01 00 01 03 00 00 00 00 00 00 00 35 0D 0D
+        if packet.value[0] == 0x03:
+            _LOGGER.info("Elevator arrived")
+            if self._event_handler:
+                self._event_handler(EVENT_ELEVATOR_ARRIVAL)
+
+    def register_event_handler(self, callback: Callable[[str], None]) -> None:
+        """Register an event handler for elevator arrival."""
+        self._event_handler = callback
