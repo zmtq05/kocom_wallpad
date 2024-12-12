@@ -1,3 +1,4 @@
+# pyright: reportArgumentType=false
 """Config flow for kocom_wallpad integration."""
 
 import socket
@@ -20,6 +21,7 @@ from .const import (
     CONF_FAN,
     CONF_GAS,
     CONF_LIGHT,
+    CONF_OUTLET,
     CONF_THERMO,
     CONF_THERMO_POLL_INTERVAL,
     DOMAIN,
@@ -79,6 +81,13 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             data[CONF_THERMO] = {room: True for room in thermo_str.split(",")}
         else:
             data[CONF_THERMO] = {}
+
+        if outlet_str := user_input.get(CONF_OUTLET):
+            data[CONF_OUTLET] = {
+                k: int(v) for k, v in (kv.split(":") for kv in outlet_str.split(","))
+            }
+        else:
+            data[CONF_OUTLET] = {}
 
         return data
 
@@ -153,13 +162,21 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         if thermo:
             conf_thermo_default = ",".join(k for k in thermo)
 
+        conf_outlet_default = ""
+        outlet: dict[str, int] = get_prev(CONF_OUTLET, {})
+        if outlet:
+            conf_outlet_default = ",".join(f"{k}:{v}" for k, v in outlet.items())
+
+        # NOTE: 옵션을 추가할 경우 `_parse_user_input`도 수정해야 함
+
         schema_device = {
-            vol.Optional(CONF_LIGHT, default=conf_light_default): cv.string,  # type: ignore
-            vol.Optional(CONF_THERMO, default=conf_thermo_default): cv.string,  # type: ignore
+            vol.Optional(CONF_LIGHT, default=conf_light_default): cv.string,
+            vol.Optional(CONF_THERMO, default=conf_thermo_default): cv.string,
             vol.Optional(
                 CONF_THERMO_POLL_INTERVAL,
                 default=get_prev(CONF_THERMO_POLL_INTERVAL, 60),
             ): cv.positive_int,
+            vol.Optional(CONF_OUTLET, default=conf_outlet_default): cv.string,
             vol.Optional(CONF_FAN, default=get_prev(CONF_FAN, False)): cv.boolean,
             vol.Optional(CONF_GAS, default=get_prev(CONF_GAS, False)): cv.boolean,
             vol.Optional(
