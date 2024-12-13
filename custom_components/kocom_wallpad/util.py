@@ -13,6 +13,7 @@ class EntryData(TypedDict):
     thermostat: dict[str, bool]
     thermostat_poll_interval: int
     outlet: dict[str, int]
+    air_conditioner: dict[str, bool]
     fan: bool
     gas: bool
     elevator: bool
