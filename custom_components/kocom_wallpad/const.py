@@ -14,5 +14,6 @@ CONF_FAN = "fan"
 CONF_GAS = "gas"
 CONF_ELEVATOR = "elevator"
 CONF_OUTLET = "outlet"
+CONF_AIR_CONDITIONER = "air_conditioner"
 
 EVENT_ELEVATOR_ARRIVAL = "elevator_arrival"

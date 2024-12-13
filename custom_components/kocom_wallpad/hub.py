@@ -13,6 +13,7 @@ handle device-specific operations.
 """
 
 import asyncio
+from enum import Enum
 import logging
 from collections.abc import Callable
 
@@ -22,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
+    CONF_AIR_CONDITIONER,
     CONF_ELEVATOR,
     CONF_FAN,
     CONF_GAS,
@@ -72,6 +74,11 @@ class Hub:
 
         self.thermostats: dict[int, Thermostat] = {
             int(room): Thermostat(self, int(room)) for room in data[CONF_THERMO]
+        }
+
+        self.air_conditioners: dict[int, AirConditioner] = {
+            int(room): AirConditioner(self, int(room))
+            for room in data[CONF_AIR_CONDITIONER]
         }
 
         if data[CONF_FAN]:
@@ -847,3 +854,179 @@ class OutletController(_HubChild):
         _LOGGER.info("Outlet: { room: %s, %s }", self.room, state_str)
         await self.write_ha_state()
         self._task = None
+
+
+class AirConditionerMode(Enum):
+    """Air conditioner operation modes.
+
+    Attributes:
+        Cooling: Cooling mode (0x00)
+        FanOnly: Fan only mode (0x01)
+        Dry: Dehumidification mode (0x02)
+        Auto: Automatic mode (0x03)
+
+    """
+
+    Cooling = 0x00
+    FanOnly = 0x01
+    Dry = 0x02
+    Auto = 0x03
+
+
+class AirConditioner(_HubChild):
+    """Controller for Kocom air conditioner devices.
+
+    Manages the air conditioner in a single room, providing control over power state,
+    operation mode, fan speed, and temperature settings.
+
+    Attributes:
+        room: Room number
+        _state: 8-byte array representing air conditioner state
+            - [0]: Power state (0x10: on, 0x00: off)
+            - [1]: Operation mode (see AirConditionerMode)
+            - [2]: Fan speed
+            - [4]: Current temperature
+            - [5]: Target temperature
+
+    """
+
+    def __init__(self, hub: Hub, room: int) -> None:
+        """Initialize an air conditioner controller.
+
+        Args:
+            hub: The Hub instance this controller belongs to
+            room: The room number this controller manages
+
+        """
+        super().__init__(hub, (Device.AirConditioner, room))
+        self.room = room
+        self._state = [0, 0, 0, 0, 0, 0, 0, 0]
+
+    @property
+    def is_on(self) -> bool:
+        """Get the current power state.
+
+        Returns:
+            bool: True if the air conditioner is on, False if off
+
+        """
+        return self._state[0] == 0x10
+
+    @property
+    def mode(self) -> AirConditionerMode:
+        """Get the current operation mode.
+
+        Returns:
+            AirConditionerMode: The current operation mode
+
+        Raises:
+            ValueError: If the mode value is invalid
+
+        """
+        match self._state[1]:
+            case 0x00:
+                return AirConditionerMode.Cooling
+            case 0x01:
+                return AirConditionerMode.FanOnly
+            case 0x02:
+                return AirConditionerMode.Dry
+            case 0x03:
+                return AirConditionerMode.Auto
+            case _:
+                raise ValueError(f"Invalid mode: {self._state[1]}")
+
+    @property
+    def fan_speed(self) -> int:
+        """Get the current fan speed setting.
+
+        Returns:
+            int: The fan speed value
+
+        """
+        return self._state[2]
+
+    @property
+    def current_temperature(self) -> int:
+        """Get the current room temperature.
+
+        Returns:
+            int: The current temperature in Celsius
+
+        """
+        return self._state[4]
+
+    @property
+    def target_temperature(self) -> int:
+        """Get the target temperature setting.
+
+        Returns:
+            int: The target temperature in Celsius
+
+        """
+        return self._state[5]
+
+    async def turn_off(self) -> None:
+        """Turn off the air conditioner."""
+        self._state[0] = 0x00
+        await self._send()
+
+    async def turn_on(self) -> None:
+        """Turn on the air conditioner."""
+        self._state[0] = 0x10
+        await self._send()
+
+    async def set_mode(self, mode: AirConditionerMode) -> None:
+        """Set the operation mode.
+
+        Args:
+            mode: The operation mode to set
+
+        """
+        self._state[1] = mode.value
+        await self._send()
+
+    async def set_fan_speed(self, fan_speed: int) -> None:
+        """Set the fan speed.
+
+        Args:
+            fan_speed: The fan speed value to set
+
+        """
+        self._state[2] = fan_speed
+        await self._send()
+
+    async def set_temp(self, temp: int) -> None:
+        """Set the target temperature.
+
+        Args:
+            temp: The target temperature in Celsius
+
+        """
+        self._state[5] = temp
+        await self._send()
+
+    async def _send(self) -> None:
+        """Send the current state to the device."""
+        await self._hub.send(self._device, Command.Set, self._state)
+
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        """Process an incoming packet from the device.
+
+        Updates the internal state and notifies Home Assistant of any changes.
+
+        Args:
+            packet: The received packet containing device state
+
+        """
+        self._state = packet.value
+
+        _LOGGER.info(
+            "AirConditioner[%s] { on: %s, mode: %s, fan_speed: %s, target_temp: %s, current_temp: %s }",
+            self.room,
+            self.is_on,
+            self.mode,
+            self.fan_speed,
+            self.target_temperature,
+            self.current_temperature,
+        )
+        await self.write_ha_state()

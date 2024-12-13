@@ -17,6 +17,7 @@ import homeassistant.helpers.config_validation as cv
 
 from .util import EntryData, typed_data
 from .const import (
+    CONF_AIR_CONDITIONER,
     CONF_ELEVATOR,
     CONF_FAN,
     CONF_GAS,
@@ -81,6 +82,13 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             data[CONF_THERMO] = {room: True for room in thermo_str.split(",")}
         else:
             data[CONF_THERMO] = {}
+
+        if air_conditioner_str := user_input.get(CONF_AIR_CONDITIONER):
+            data[CONF_AIR_CONDITIONER] = {
+                room: True for room in air_conditioner_str.split(",")
+            }
+        else:
+            data[CONF_AIR_CONDITIONER] = {}
 
         if outlet_str := user_input.get(CONF_OUTLET):
             data[CONF_OUTLET] = {
@@ -162,6 +170,11 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
         if thermo:
             conf_thermo_default = ",".join(k for k in thermo)
 
+        conf_air_conditioner_default = ""
+        air_conditioner: dict[str, bool] = get_prev(CONF_AIR_CONDITIONER, {})
+        if air_conditioner:
+            conf_air_conditioner_default = ",".join(k for k in air_conditioner)
+
         conf_outlet_default = ""
         outlet: dict[str, int] = get_prev(CONF_OUTLET, {})
         if outlet:
@@ -176,6 +189,9 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_THERMO_POLL_INTERVAL,
                 default=get_prev(CONF_THERMO_POLL_INTERVAL, 60),
             ): cv.positive_int,
+            vol.Optional(
+                CONF_AIR_CONDITIONER, default=conf_air_conditioner_default
+            ): cv.string,
             vol.Optional(CONF_OUTLET, default=conf_outlet_default): cv.string,
             vol.Optional(CONF_FAN, default=get_prev(CONF_FAN, False)): cv.boolean,
             vol.Optional(CONF_GAS, default=get_prev(CONF_GAS, False)): cv.boolean,
