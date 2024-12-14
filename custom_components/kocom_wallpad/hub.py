@@ -271,6 +271,21 @@ class Hub:
                             _LOGGER.warning(
                                 "Received gas valve packet but gas valve is disabled"
                             )
+                    case (Device.Outlet, room):
+                        if room in self.outlet_controllers:
+                            await self.outlet_controllers[room]._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received packet for unconfigured outlet room %d", room
+                            )
+                    case (Device.AirConditioner, room):
+                        if room in self.air_conditioners:
+                            await self.air_conditioners[room]._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received packet for unconfigured air conditioner room %d",
+                                room,
+                            )
                     case (Device.Wallpad, _):
                         if packet.dst[0] == Device.Elevator and self.elevator:
                             await self.elevator._handle_packet(packet)
