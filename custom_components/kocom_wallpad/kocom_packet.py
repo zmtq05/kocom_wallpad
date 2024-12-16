@@ -25,6 +25,7 @@ class Device(IntEnum):
     Elevator = 0x44
     Outlet = 0x3B
     AirConditioner = 0x39
+    AirQuality = 0x98
 
 
 class Command(IntEnum):

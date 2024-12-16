@@ -18,6 +18,7 @@ import homeassistant.helpers.config_validation as cv
 from .util import EntryData, typed_data
 from .const import (
     CONF_AIR_CONDITIONER,
+    CONF_AIR_QUALITY,
     CONF_ELEVATOR,
     CONF_FAN,
     CONF_GAS,
@@ -197,6 +198,9 @@ class KocomWallpadConfigFlow(ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_GAS, default=get_prev(CONF_GAS, False)): cv.boolean,
             vol.Optional(
                 CONF_ELEVATOR, default=get_prev(CONF_ELEVATOR, False)
+            ): cv.boolean,
+            vol.Optional(
+                CONF_AIR_QUALITY, default=get_prev(CONF_AIR_QUALITY, False)
             ): cv.boolean,
         }
 

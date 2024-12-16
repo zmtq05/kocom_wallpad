@@ -15,5 +15,6 @@ CONF_GAS = "gas"
 CONF_ELEVATOR = "elevator"
 CONF_OUTLET = "outlet"
 CONF_AIR_CONDITIONER = "air_conditioner"
+CONF_AIR_QUALITY = "air_quality"
 
 EVENT_ELEVATOR_ARRIVAL = "elevator_arrival"

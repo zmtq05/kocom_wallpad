@@ -17,6 +17,7 @@ class EntryData(TypedDict):
     fan: bool
     gas: bool
     elevator: bool
+    air_quality: bool
 
 
 def typed_data(entry: ConfigEntry) -> EntryData:
