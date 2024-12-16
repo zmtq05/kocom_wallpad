@@ -24,6 +24,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_AIR_CONDITIONER,
+    CONF_AIR_QUALITY,
     CONF_ELEVATOR,
     CONF_FAN,
     CONF_GAS,
@@ -95,6 +96,11 @@ class Hub:
             self.elevator = Elevator(self)
         else:
             self.elevator = None
+
+        if data[CONF_AIR_QUALITY]:
+            self.air_quality = AirQuality(self)
+        else:
+            self.air_quality = None
 
         self._reconnect_task = None
         self._reconnect_interval = 30  # 재연결 시도 간격(초)
@@ -285,6 +291,13 @@ class Hub:
                             _LOGGER.warning(
                                 "Received packet for unconfigured air conditioner room %d",
                                 room,
+                            )
+                    case (Device.AirQuality, _):
+                        if self.air_quality:
+                            await self.air_quality._handle_packet(packet)
+                        else:
+                            _LOGGER.warning(
+                                "Received air quality packet but air quality is disabled"
                             )
                     case (Device.Wallpad, _):
                         if packet.dst[0] == Device.Elevator and self.elevator:
@@ -1043,5 +1056,113 @@ class AirConditioner(_HubChild):
             self.fan_speed,
             self.target_temperature,
             self.current_temperature,
+        )
+        await self.write_ha_state()
+
+
+class AirQuality(_HubChild):
+    """Sensor for air quality.
+
+    This sensor is used to monitor the air quality in a room.
+
+    Attributes:
+        _state: 8-byte array representing air quality state
+            - [0]: PM10
+            - [1]: PM2.5
+            - [2, 3]: CO2; combine 2 bytes to get the value
+            - [4, 5]: Volatile Organic Compounds (VOC); combine 2 bytes to get the value
+            - [6]: Temperature (°C)
+            - [7]: Humidity (%)
+
+    """
+
+    def __init__(self, hub: Hub) -> None:
+        """Initialize an air quality sensor.
+
+        Args:
+            hub: The Hub instance this sensor belongs to
+
+        """
+        super().__init__(hub, Device.AirQuality)
+        self._state = [0, 0, 0, 0, 0, 0, 0, 0]
+
+    @property
+    def pm10(self) -> int:
+        """Get the PM10 value.
+
+        Returns:
+            int: The PM10 value
+
+        """
+        return self._state[0]
+
+    @property
+    def pm25(self) -> int:
+        """Get the PM2.5 value.
+
+        Returns:
+            int: The PM2.5 value
+
+        """
+        return self._state[1]
+
+    @property
+    def co2(self) -> int:
+        """Get the CO2 value.
+
+        Returns:
+            int: The CO2 value
+
+        """
+        return (self._state[2] << 8) + self._state[3]
+
+    @property
+    def voc(self) -> int:
+        """Get the VOC value.
+
+        Returns:
+            int: The VOC value
+
+        """
+        return (self._state[4] << 8) + self._state[5]
+
+    @property
+    def temperature(self) -> int:
+        """Get the temperature value.
+
+        Returns:
+            int: The temperature value
+
+        """
+        return self._state[6]
+
+    @property
+    def humidity(self) -> int:
+        """Get the humidity value.
+
+        Returns:
+            int: The humidity value
+
+        """
+        return self._state[7]
+
+    async def _handle_packet(self, packet: KocomPacket) -> None:
+        """Process an incoming packet from the device.
+
+        Updates the internal state and notifies Home Assistant of any changes.
+
+        Args:
+            packet: The received packet containing device state
+
+        """
+        self._state = packet.value
+        _LOGGER.info(
+            "AirQuality { pm10: %s, pm25: %s, co2: %s, voc: %s, temperature: %s, humidity: %s }",
+            self.pm10,
+            self.pm25,
+            self.co2,
+            self.voc,
+            self.temperature,
+            self.humidity,
         )
         await self.write_ha_state()
